@@ -11,7 +11,7 @@ h/t https://github.com/abdk-consulting/abdk-libraries-solidity
 SPDX-License-Identifier: BSD-4-Clause
 */
 
-pragma solidity ^0.6.0;
+pragma solidity ^0.6.12;
 
 library MathUtils {
     /**

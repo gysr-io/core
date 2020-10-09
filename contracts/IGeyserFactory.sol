@@ -8,11 +8,11 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.6.0;
+pragma solidity ^0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-abstract contract IGeyserFactory {
+interface IGeyserFactory {
     // events
     event GeyserCreated(address indexed user, address geyser);
 
@@ -30,5 +30,5 @@ abstract contract IGeyserFactory {
         uint256 bonusMin,
         uint256 bonusMax,
         uint256 bonusPeriod
-    ) external virtual returns (address);
+    ) external returns (address);
 }

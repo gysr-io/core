@@ -19,6 +19,7 @@ const GeyserFactory = contract.fromArtifact('GeyserFactory');
 const GeyserToken = contract.fromArtifact('GeyserToken');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
+const TestElasticToken = contract.fromArtifact('TestElasticToken')
 
 // need decent tolerance to account for potential timing error
 const TOKEN_DELTA = toFixedPointBigNumber(0.001, 10, DECIMALS);
@@ -33,6 +34,7 @@ describe('geyser', function () {
     this.factory = await GeyserFactory.new(this.gysr.address, { from: org });
     this.reward = await TestToken.new({ from: org });
     this.staking = await TestLiquidityToken.new({ from: org });
+    this.elastic = await TestElasticToken.new({ from: org });
   });
 
   describe('construction', function () {
@@ -325,10 +327,10 @@ describe('geyser', function () {
 
         // expire first period
         await time.increase(days(90));
-        await this.geyser.update();
+        this.res0 = await this.geyser.clean({ from: owner });
 
         // fund again
-        this.res = await this.geyser.methods['fund(uint256,uint256)'](
+        this.res1 = await this.geyser.methods['fund(uint256,uint256)'](
           tokens(500), days(180), { from: owner }
         );
       });
@@ -337,13 +339,16 @@ describe('geyser', function () {
         expect(await this.geyser.fundingCount()).to.be.bignumber.equal(new BN(1));
       });
 
-      it('should emit RewardsFunded and RewardsExpired', async function () {
-        expectEvent(this.res, 'RewardsFunded', { amount: tokens(500), duration: days(180) });
+      it('should emit RewardsExpired on clean', async function () {
         expectEvent(
-          this.res,
+          this.res0,
           'RewardsExpired',
           { amount: tokens(100), start: this.t0, duration: days(90) }
         );
+      });
+
+      it('should emit RewardsFunded on fund', async function () {
+        expectEvent(this.res1, 'RewardsFunded', { amount: tokens(500), duration: days(180) });
       });
 
       it('should have full first funding unlocked', async function () {
@@ -379,10 +384,10 @@ describe('geyser', function () {
 
         // expire second funding
         await time.increaseTo(this.t0.add(days(45)));
-        await this.geyser.update();
+        this.res0 = await this.geyser.clean({ from: owner });
 
         // fund again
-        this.res = await this.geyser.methods['fund(uint256,uint256)'](
+        this.res1 = await this.geyser.methods['fund(uint256,uint256)'](
           tokens(300), days(180), { from: owner }
         );
 
@@ -392,13 +397,16 @@ describe('geyser', function () {
         expect(await this.geyser.fundingCount()).to.be.bignumber.equal(new BN(4));
       });
 
-      it('should emit RewardsFunded and RewardsExpired', async function () {
-        expectEvent(this.res, 'RewardsFunded', { amount: tokens(300), duration: days(180) });
+      it('should emit RewardsExpired on clean', async function () {
         expectEvent(
-          this.res,
+          this.res0,
           'RewardsExpired',
           { amount: tokens(200), start: this.t1, duration: days(30) }
         );
+      });
+
+      it('should emit RewardsFunded on fund', async function () {
+        expectEvent(this.res1, 'RewardsFunded', { amount: tokens(300), duration: days(180) });
       });
 
       it('should move last funding to expired index', async function () {
@@ -485,10 +493,10 @@ describe('geyser', function () {
 
         // expire second and fourth fundings
         await time.increaseTo(this.t0.add(days(45)));
-        await this.geyser.update();
+        this.res0 = await this.geyser.clean({ from: owner });
 
         // fund again
-        this.res = await this.geyser.methods['fund(uint256,uint256)'](
+        this.res1 = await this.geyser.methods['fund(uint256,uint256)'](
           tokens(300), days(180), { from: owner }
         );
 
@@ -498,18 +506,21 @@ describe('geyser', function () {
         expect(await this.geyser.fundingCount()).to.be.bignumber.equal(new BN(3));
       });
 
-      it('should emit RewardsFunded and multiple RewardsExpired', async function () {
-        expectEvent(this.res, 'RewardsFunded', { amount: tokens(300), duration: days(180) });
+      it('should emit multiple RewardsExpired on clean', async function () {
         expectEvent(
-          this.res,
+          this.res0,
           'RewardsExpired',
           { amount: tokens(200), start: this.t1, duration: days(30) }
         );
         expectEvent(
-          this.res,
+          this.res0,
           'RewardsExpired',
           { amount: tokens(800), start: this.t3, duration: days(30) }
         );
+      });
+
+      it('should emit RewardsFunded on fund', async function () {
+        expectEvent(this.res1, 'RewardsFunded', { amount: tokens(300), duration: days(180) });
       });
 
       it('should properly reindex fundings', async function () {
@@ -648,10 +659,10 @@ describe('geyser', function () {
 
         // expire first funding
         await time.increaseTo(this.t0.add(days(45)));
-        await this.geyser.update();
+        this.res0 = await this.geyser.clean({ from: owner });
 
         // fund again
-        this.res = await this.geyser.methods['fund(uint256,uint256)'](
+        this.res1 = await this.geyser.methods['fund(uint256,uint256)'](
           tokens(200), days(180), { from: owner }
         );
       });
@@ -660,13 +671,16 @@ describe('geyser', function () {
         expect(await this.geyser.fundingCount()).to.be.bignumber.equal(new BN(16));
       });
 
-      it('should emit RewardsFunded and RewardsExpired', async function () {
-        expectEvent(this.res, 'RewardsFunded', { amount: tokens(200), duration: days(180) });
+      it('should emit RewardsExpired on clean', async function () {
         expectEvent(
-          this.res,
+          this.res0,
           'RewardsExpired',
           { amount: tokens(100), start: this.t0, duration: days(30) }
         );
+      });
+
+      it('should emit RewardsFunded on fund', async function () {
+        expectEvent(this.res1, 'RewardsFunded', { amount: tokens(200), duration: days(180) });
       });
 
       it('should properly reindex fundings', async function () {
@@ -1014,7 +1028,7 @@ describe('geyser', function () {
         expect(mult).to.be.approximately(multExpected, 0.000001);
       });
 
-      it('should return 8.0 bonus multiplier for 1.0M GYSR tokens', async function () {
+      it('should return 9.0 bonus multiplier for 1.0M GYSR tokens', async function () {
         const x = 1000000.0;
         const mult = fromFixedPointBigNumber(await this.geyser.gysrBonus(tokens(x)), 10, 18);
 
@@ -1249,14 +1263,143 @@ describe('geyser', function () {
     });
   });
 
-  describe('preview', function () {
+  describe('elastic reward token', function () {
 
     beforeEach(async function () {
-      // TODO
+      // owner creates geyser
+      this.geyser = await Geyser.new(
+        this.staking.address,
+        this.elastic.address,
+        bonus(0.0),
+        bonus(1.0),
+        days(30),
+        this.gysr.address,
+        { from: owner }
+      );
+      // owner funds geyser
+      await this.elastic.transfer(owner, tokens(10000), { from: org });
+      await this.elastic.approve(this.geyser.address, tokens(100000), { from: owner });
+      await this.geyser.methods['fund(uint256,uint256)'](tokens(1000), days(180), { from: owner });
+      this.t0 = await this.geyser.lastUpdated();
+
+      // alice stakes 100 tokens
+      await this.staking.transfer(alice, tokens(1000), { from: org });
+      await this.staking.approve(this.geyser.address, tokens(10000), { from: alice });
+      await this.geyser.stake(tokens(100), [], { from: alice });
     });
 
-    describe('when not funded', function () {
-      // TODO
+    describe('when supply expands', function () {
+
+      beforeEach(async function () {
+        // advance 45 days
+        await time.increaseTo(this.t0.add(days(45)));
+        this.res0 = await this.geyser.update();
+
+        // expand
+        await this.elastic.setCoefficient(toFixedPointBigNumber(1.1, 10, 18));
+
+        // advance another 45 days
+        await time.increaseTo(this.t0.add(days(90)));
+        this.res1 = await this.geyser.update();
+
+        // alice unstakes 25 tokens with 2x time multiplier
+        // portion: (2.0 * 25) / (100 - 25 + 2.0 * 25) = 0.4
+        this.res2 = await this.geyser.unstake(tokens(25), [], { from: alice });
+      });
+
+      it('should increase total locked', async function () {
+        expect(await this.geyser.totalLocked()).to.be.bignumber.closeTo(tokens(1.1 * 500), TOKEN_DELTA);
+      });
+
+      it('should increase total unlocked', async function () {
+        // 0.4 of unlocked already distributed
+        expect(await this.geyser.totalUnlocked()).to.be.bignumber.closeTo(tokens(0.6 * 1.1 * 500), TOKEN_DELTA);
+      });
+
+      it('should unlock at standard rate originally', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsUnlocked')[0];
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
+        expect(e.args.total).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
+      });
+
+      it('should unlock at increased rate after expansion', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsUnlocked')[0];
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(1.1 * 250), TOKEN_DELTA);
+        expect(e.args.total).to.be.bignumber.closeTo(tokens(1.1 * 500), TOKEN_DELTA);
+      });
+
+      it('should emit increased reward event', async function () {
+        expectEvent(
+          this.res2,
+          'Unstaked',
+          { user: alice, amount: tokens(25), total: tokens(75) }
+        );
+
+        const e = this.res2.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(0.4 * 1.1 * 500), TOKEN_DELTA);
+      });
+
+      it('should distribute increased rewards', async function () {
+        expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(0.4 * 1.1 * 500), TOKEN_DELTA);
+      });
+    });
+
+    describe('when supply decreases', function () {
+
+      beforeEach(async function () {
+        // advance 45 days
+        await time.increaseTo(this.t0.add(days(45)));
+        this.res0 = await this.geyser.update();
+
+        // shrink
+        await this.elastic.setCoefficient(toFixedPointBigNumber(0.75, 10, 18));
+
+        // advance another 45 days
+        await time.increaseTo(this.t0.add(days(90)));
+        this.res1 = await this.geyser.update();
+
+        // alice unstakes 25 tokens with 2x time multiplier
+        // portion: (2.0 * 25) / (100 - 25 + 2.0 * 25) = 0.4
+        this.res2 = await this.geyser.unstake(tokens(25), [], { from: alice });
+      });
+
+      it('should decrease total locked', async function () {
+        expect(await this.geyser.totalLocked()).to.be.bignumber.closeTo(tokens(0.75 * 500), TOKEN_DELTA);
+      });
+
+      it('should decrease total unlocked', async function () {
+        // 0.4 of unlocked already distributed
+        expect(await this.geyser.totalUnlocked()).to.be.bignumber.closeTo(tokens(0.6 * 0.75 * 500), TOKEN_DELTA);
+      });
+
+      it('should unlock at standard rate originally', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsUnlocked')[0];
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
+        expect(e.args.total).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
+      });
+
+      it('should unlock at decreased rate after expansion', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsUnlocked')[0];
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(0.75 * 250), TOKEN_DELTA);
+        expect(e.args.total).to.be.bignumber.closeTo(tokens(0.75 * 500), TOKEN_DELTA);
+      });
+
+      it('should emit decreased reward event', async function () {
+        expectEvent(
+          this.res2,
+          'Unstaked',
+          { user: alice, amount: tokens(25), total: tokens(75) }
+        );
+
+        const e = this.res2.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(0.4 * 0.75 * 500), TOKEN_DELTA);
+      });
+
+      it('should distribute decreased rewards', async function () {
+        expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(0.4 * 0.75 * 500), TOKEN_DELTA);
+      });
     });
   });
 

@@ -10,7 +10,7 @@ h/t https://github.com/ethereum/EIPs/blob/master/EIPS/eip-900.md
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.6.0;
+pragma solidity ^0.6.12;
 
 interface IStaking {
     // events

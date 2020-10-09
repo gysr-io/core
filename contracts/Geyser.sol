@@ -12,7 +12,7 @@ h/t https://github.com/ampleforth/token-geyser
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.6.0;
+pragma solidity ^0.6.12;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -61,9 +61,9 @@ contract Geyser is IGeyser {
     uint256 public constant MAX_ACTIVE_FUNDINGS = 16;
 
     // token pool fields
-    GeyserPool private _stakingPool;
-    GeyserPool private _unlockedPool;
-    GeyserPool private _lockedPool;
+    GeyserPool private immutable _stakingPool;
+    GeyserPool private immutable _unlockedPool;
+    GeyserPool private immutable _lockedPool;
     Funding[] public fundings;
 
     // user staking fields
@@ -71,9 +71,9 @@ contract Geyser is IGeyser {
     mapping(address => Stake[]) public userStakes;
 
     // time bonus fields
-    uint256 public bonusMin;
-    uint256 public bonusMax;
-    uint256 public bonusPeriod;
+    uint256 public immutable bonusMin;
+    uint256 public immutable bonusMax;
+    uint256 public immutable bonusPeriod;
 
     // global state fields
     uint256 public totalLockedShares;
@@ -84,7 +84,7 @@ contract Geyser is IGeyser {
     uint256 public lastUpdated;
 
     // gysr fields
-    IERC20 private _gysr;
+    IERC20 private immutable _gysr;
 
     /**
      * @param stakingToken_ the token that will be staked
@@ -212,36 +212,13 @@ contract Geyser is IGeyser {
         // validate
         require(amount > 0, "Geyser: funding amount is zero");
         require(start >= block.timestamp, "Geyser: funding start is past");
-
-        // check for stale funding schedules to expire
-        uint256 removed = 0;
-        uint256 originalSize = fundings.length;
-        for (uint256 i = 0; i < originalSize; i++) {
-            Funding storage funding = fundings[i - removed];
-            uint256 idx = i - removed;
-
-            if (_unlockable(idx) == 0 && block.timestamp >= funding.end) {
-                emit RewardsExpired(
-                    funding.amount,
-                    funding.duration,
-                    funding.start
-                );
-
-                // remove at idx by copying last element here, then popping off last
-                // (we don't care about order)
-                fundings[i - removed] = fundings[fundings.length - 1];
-                fundings.pop();
-                removed += 1;
-            }
-        }
-
         require(
             fundings.length < MAX_ACTIVE_FUNDINGS,
             "Geyser: exceeds max active funding schedules"
         );
 
         // update bookkeeping
-        update();
+        _update(msg.sender);
 
         // mint shares at current rate
         uint256 lockedTokens = totalLocked();
@@ -252,14 +229,17 @@ contract Geyser is IGeyser {
         totalLockedShares = totalLockedShares.add(mintedLockedShares);
 
         // create new funding
-        Funding memory funding;
-        funding.amount = amount;
-        funding.shares = mintedLockedShares;
-        funding.lastUpdated = start;
-        funding.start = start;
-        funding.end = start.add(duration);
-        funding.duration = duration;
-        fundings.push(funding);
+        fundings.push(
+            Funding({
+                amount: amount,
+                shares: mintedLockedShares,
+                unlocked: 0,
+                lastUpdated: start,
+                start: start,
+                end: start.add(duration),
+                duration: duration
+            })
+        );
 
         // do transfer of funding
         _lockedPool.token().safeTransferFrom(
@@ -299,24 +279,38 @@ contract Geyser is IGeyser {
     /**
      * @inheritdoc IGeyser
      */
-    function update() public override {
-        _unlockTokens();
+    function update() external override {
+        _update(msg.sender);
+    }
 
-        // global accounting
-        uint256 deltaTotalShareSeconds = (block.timestamp.sub(lastUpdated)).mul(
-            totalStakingShares
-        );
-        totalStakingShareSeconds = totalStakingShareSeconds.add(
-            deltaTotalShareSeconds
-        );
-        lastUpdated = block.timestamp;
+    /**
+     * @inheritdoc IGeyser
+     */
+    function clean() external override onlyOwner {
+        // update bookkeeping
+        _update(msg.sender);
 
-        // user accounting
-        User storage user = userTotals[msg.sender];
-        uint256 deltaUserShareSeconds = (block.timestamp.sub(user.lastUpdated))
-            .mul(user.shares);
-        user.shareSeconds = user.shareSeconds.add(deltaUserShareSeconds);
-        user.lastUpdated = block.timestamp;
+        // check for stale funding schedules to expire
+        uint256 removed = 0;
+        uint256 originalSize = fundings.length;
+        for (uint256 i = 0; i < originalSize; i++) {
+            Funding storage funding = fundings[i.sub(removed)];
+            uint256 idx = i.sub(removed);
+
+            if (_unlockable(idx) == 0 && block.timestamp >= funding.end) {
+                emit RewardsExpired(
+                    funding.amount,
+                    funding.duration,
+                    funding.start
+                );
+
+                // remove at idx by copying last element here, then popping off last
+                // (we don't care about order)
+                fundings[idx] = fundings[fundings.length.sub(1)];
+                fundings.pop();
+                removed = removed.add(1);
+            }
+        }
     }
 
     // Geyser
@@ -332,6 +326,7 @@ contract Geyser is IGeyser {
         address beneficiary,
         uint256 amount
     ) private {
+        // validate
         require(amount > 0, "Geyser: stake amount is zero");
         require(
             beneficiary != address(0),
@@ -344,7 +339,8 @@ contract Geyser is IGeyser {
             : amount.mul(INITIAL_SHARES_PER_TOKEN);
         require(mintedStakingShares > 0, "Geyser: stake amount too small");
 
-        update();
+        // update bookkeeping
+        _update(beneficiary);
 
         // update user staking info
         User storage user = userTotals[beneficiary];
@@ -375,15 +371,15 @@ contract Geyser is IGeyser {
      * @return number of reward tokens distributed
      */
     function _unstake(uint256 amount, uint256 gysr) private returns (uint256) {
-        // update accounting
-        update();
-
-        // checks
+        // validate
         require(amount > 0, "Geyser: unstake amount is zero");
         require(
             totalStakedFor(msg.sender) >= amount,
             "Geyser: unstake amount exceeds balance"
         );
+
+        // update bookkeeping
+        _update(msg.sender);
 
         // do unstaking, first-in last-out, respecting time bonus
         uint256 timeWeightedShareSeconds = _unstakeFirstInLastOut(amount);
@@ -471,6 +467,7 @@ contract Geyser is IGeyser {
         User storage user = userTotals[msg.sender];
         user.shareSeconds = user.shareSeconds.sub(shareSecondsToBurn);
         user.shares = user.shares.sub(stakingSharesToBurn);
+        user.lastUpdated = block.timestamp;
 
         // update global totals
         totalStakingShareSeconds = totalStakingShareSeconds.sub(
@@ -482,10 +479,33 @@ contract Geyser is IGeyser {
     }
 
     /**
-     * @dev unlocks reward tokens based on funding schedules
-     * @return number of newly unlocked reward tokens
+     * @dev internal implementation of update method
+     * @param addr address for user accounting update
      */
-    function _unlockTokens() private returns (uint256) {
+    function _update(address addr) private {
+        _unlockTokens();
+
+        // global accounting
+        uint256 deltaTotalShareSeconds = (block.timestamp.sub(lastUpdated)).mul(
+            totalStakingShares
+        );
+        totalStakingShareSeconds = totalStakingShareSeconds.add(
+            deltaTotalShareSeconds
+        );
+        lastUpdated = block.timestamp;
+
+        // user accounting
+        User storage user = userTotals[addr];
+        uint256 deltaUserShareSeconds = (block.timestamp.sub(user.lastUpdated))
+            .mul(user.shares);
+        user.shareSeconds = user.shareSeconds.add(deltaUserShareSeconds);
+        user.lastUpdated = block.timestamp;
+    }
+
+    /**
+     * @dev unlocks reward tokens based on funding schedules
+     */
+    function _unlockTokens() private {
         uint256 tokensToUnlock = 0;
         uint256 lockedTokens = totalLocked();
 
@@ -514,8 +534,6 @@ contract Geyser is IGeyser {
             _lockedPool.transfer(address(_unlockedPool), tokensToUnlock);
             emit RewardsUnlocked(tokensToUnlock, totalUnlocked());
         }
-
-        return tokensToUnlock;
     }
 
     /**
@@ -674,9 +692,6 @@ contract Geyser is IGeyser {
         )
     {
         // compute expected updates to global totals
-        uint256 deltaTotalShareSeconds = (block.timestamp.sub(lastUpdated)).mul(
-            totalStakingShares
-        );
         uint256 deltaUnlocked = 0;
         if (totalLockedShares != 0) {
             uint256 sharesToUnlock = 0;
@@ -707,7 +722,8 @@ contract Geyser is IGeyser {
         uint256 timeBonusShareSeconds = 0;
 
         // compute first-in-last-out, time bonus weighted, share seconds
-        for (uint256 i = userStakes[addr].length - 1; i >= 0; i--) {
+        uint256 i = userStakes[addr].length.sub(1);
+        while (shares > 0) {
             Stake storage s = userStakes[addr][i];
             uint256 time = block.timestamp.sub(s.timestamp);
 
@@ -728,6 +744,8 @@ contract Geyser is IGeyser {
                 );
                 break;
             }
+            // this will throw on underflow
+            i = i.sub(1);
         }
 
         // apply gysr bonus
@@ -737,7 +755,7 @@ contract Geyser is IGeyser {
 
         // compute rewards based on expected updates
         uint256 expectedTotalShareSeconds = totalStakingShareSeconds
-            .add(deltaTotalShareSeconds)
+            .add((block.timestamp.sub(lastUpdated)).mul(totalStakingShares))
             .add(gysrBonusShareSeconds)
             .sub(rawShareSeconds);
 

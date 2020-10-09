@@ -9,18 +9,15 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.6.0;
-
-import "@openzeppelin/contracts/access/Ownable.sol";
+pragma solidity ^0.6.12;
 
 import "./IGeyserFactory.sol";
 import "./Geyser.sol";
 
-contract GeyserFactory is Ownable, IGeyserFactory {
+contract GeyserFactory is IGeyserFactory {
     // fields
     mapping(address => bool) public map;
     address[] public list;
-    uint256 public count = 0;
     address private _gysr;
 
     /**
@@ -54,10 +51,16 @@ contract GeyserFactory is Ownable, IGeyserFactory {
         // bookkeeping
         map[address(geyser)] = true;
         list.push(address(geyser));
-        count++;
 
         // output
         emit GeyserCreated(msg.sender, address(geyser));
         return address(geyser);
+    }
+
+    /**
+     * @return total number of Geysers created by the factory
+     */
+    function count() public view returns (uint256) {
+        return list.length;
     }
 }

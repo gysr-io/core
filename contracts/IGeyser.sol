@@ -9,7 +9,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.6.0;
+pragma solidity ^0.6.12;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -63,7 +63,7 @@ abstract contract IGeyser is IStaking, Ownable {
     /**
      * @notice fund Geyser by locking up reward tokens for future distribution
      * @param amount number of reward tokens to lock up as funding
-     * @param duration period (seconds) over which funding will be unlock
+     * @param duration period (seconds) over which funding will be unlocked
      * @param start time (seconds) at which funding begins to unlock
      */
     function fund(
@@ -92,5 +92,10 @@ abstract contract IGeyser is IStaking, Ownable {
     /**
      * @notice update accounting, unlock tokens, etc.
      */
-    function update() public virtual;
+    function update() external virtual;
+
+    /**
+     * @notice clean geyser, expire old fundings, etc.
+     */
+    function clean() external virtual;
 }

@@ -17,8 +17,10 @@
     "ganache-cli": "^6.9.1",
     "mocha": "^8.1.1",
     "react": "^16.13.1",
+    "regenerator-runtime": "^0.13.7",
     "truffle": "^5.1.39",
     "truffle-contract-size": "^2.0.0",
+    "truffle-ledger-provider": "^1.0.3",
     "web3": "^1.2.11"
   },
   "devDependencies": {},

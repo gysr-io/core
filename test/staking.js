@@ -19,6 +19,7 @@ const GeyserFactory = contract.fromArtifact('GeyserFactory');
 const GeyserToken = contract.fromArtifact('GeyserToken');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
+const TestElasticToken = contract.fromArtifact('TestElasticToken')
 
 // need decent tolerance to account for potential timing error
 const TOKEN_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
@@ -211,6 +212,53 @@ describe('staking', function () {
           this.res,
           'Staked',
           { user: bob, amount: tokens(200), total: tokens(200) }
+        );
+      });
+    });
+  });
+
+
+  describe('earn', function () {
+
+    describe('when a stake for is made while beneficiary is accruing rewards', function () {
+      // note: previously this reproduced a vulnerability, discovered during security audit,
+      // where the stakeFor operation could be used to effectively disable earning for another user
+
+      beforeEach(async function () {
+        // funding and approval
+        await this.staking.transfer(alice, tokens(1000), { from: org });
+        await this.staking.transfer(bob, tokens(1000), { from: org });
+        await this.staking.approve(this.geyser.address, tokens(100000), { from: alice });
+        await this.staking.approve(this.geyser.address, tokens(100000), { from: bob });
+
+        // bob stakes
+        await this.geyser.stake(tokens(500), [], { from: bob });
+        this.t0 = await this.geyser.lastUpdated();
+
+        // advance 30 days
+        await time.increaseTo(this.t0.add(days(30)));
+
+        // alice stakes a small amount for bob
+        this.res = await this.geyser.stakeFor(bob, tokens(10), [], { from: alice });
+
+        // advance another 30 days
+        await time.increaseTo(this.t0.add(days(60)));
+
+        // update
+        await this.geyser.update({ from: bob });
+      });
+
+      it('should update users earned share seconds', async function () {
+        expect((await this.geyser.userTotals(bob)).shareSeconds).to.be.bignumber.closeTo(
+          shares((500 * 60 + 10 * 30) * 24 * 60 * 60),
+          shares(510) // one share second
+        );
+      });
+
+      it('should update total share seconds', async function () {
+        expect(await this.geyser.totalStakingShareSeconds()).to.be.bignumber.closeTo(
+          shares((500 * 60 + 10 * 30) * 24 * 60 * 60),
+          shares(510) // one share second
         );
       });
     });
@@ -1684,6 +1732,433 @@ describe('staking against Boiler', function () {
 
       it('should have no remaining stakes for user', async function () {
         expect(await this.geyser.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
+      });
+
+    });
+
+  });
+
+});
+
+
+describe('staking with elastic token', function () {
+  const [owner, org, alice, bob] = accounts;
+
+  beforeEach('setup', async function () {
+    // base setup
+    this.gysr = await GeyserToken.new({ from: org });
+    this.factory = await GeyserFactory.new(this.gysr.address, { from: org });
+    this.reward = await TestToken.new({ from: org });
+    this.elastic = await TestElasticToken.new({ from: org });
+
+    // owner creates geyser with elastic staking token
+    this.geyser = await Geyser.new(
+      this.elastic.address,
+      this.reward.address,
+      bonus(0.0),
+      bonus(2.0),
+      days(60),
+      this.gysr.address,
+      { from: owner }
+    );
+
+    // owner funds geyser
+    await this.reward.transfer(owner, tokens(10000), { from: org });
+    await this.reward.approve(this.geyser.address, tokens(100000), { from: owner });
+    await this.geyser.methods['fund(uint256,uint256)'](tokens(1000), days(400), { from: owner });
+    this.t0 = await this.geyser.lastUpdated()
+
+    // acquire staking tokens and approval
+    await this.elastic.transfer(alice, tokens(1000), { from: org });
+    await this.elastic.transfer(bob, tokens(1000), { from: org });
+    await this.elastic.approve(this.geyser.address, tokens(100000), { from: alice });
+    await this.elastic.approve(this.geyser.address, tokens(100000), { from: bob });
+  });
+
+  describe('stake', function () {
+
+    describe('when supply expands', function () {
+
+      beforeEach(async function () {
+        // alice stakes
+        this.res0 = await this.geyser.stake(tokens(100), [], { from: alice });
+
+        // expand elastic supply
+        await this.elastic.setCoefficient(toFixedPointBigNumber(1.1, 10, 18));
+
+        // bob stakes
+        this.res1 = await this.geyser.stake(tokens(100), [], { from: bob });
+      });
+
+      it('should decrease then expand elastic token balance of first user', async function () {
+        expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(990), TOKEN_DELTA);
+      });
+
+      it('should expand then decrease elastic token balance of second user', async function () {
+        expect(await this.elastic.balanceOf(bob)).to.be.bignumber.closeTo(tokens(1000), TOKEN_DELTA);
+      });
+
+      it('should increase total staked', async function () {
+        expect(await this.geyser.totalStaked()).to.be.bignumber.closeTo(tokens(210), TOKEN_DELTA);
+      });
+
+      it('should increase staking balance for users who staked before expansion', async function () {
+        expect(await this.geyser.totalStakedFor(alice)).to.be.bignumber.closeTo(tokens(110), TOKEN_DELTA);
+      });
+
+      it('should not change staking balance for users who staked after expansion', async function () {
+        expect(await this.geyser.totalStakedFor(bob)).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+      });
+
+      it('should not change previously minted shares', async function () {
+        expect((await this.geyser.userTotals(alice)).shares).to.be.bignumber.closeTo(shares(100), SHARE_DELTA);
+      });
+
+      it('should mint new shares at lower rate', async function () {
+        expect((await this.geyser.userTotals(bob)).shares).to.be.bignumber.closeTo(shares(100 / 1.1), SHARE_DELTA);
+      });
+
+      it('should combine to increase the total staking shares', async function () {
+        expect(await this.geyser.totalStakingShares()).to.be.bignumber.closeTo(shares(100 + 100 / 1.1), SHARE_DELTA);
+      });
+
+      it('should emit each Staked event', async function () {
+        const e0 = this.res0.logs.filter(l => l.event === 'Staked')[0];
+        expect(e0.args.user).eq(alice);
+        expect(e0.args.amount).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+        expect(e0.args.total).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+
+        const e1 = this.res1.logs.filter(l => l.event === 'Staked')[0];
+        expect(e1.args.user).eq(bob);
+        expect(e1.args.amount).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+        expect(e1.args.total).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+      });
+
+    });
+
+    describe('when supply decreases', function () {
+
+      beforeEach(async function () {
+        // alice stakes
+        this.res0 = await this.geyser.stake(tokens(100), [], { from: alice });
+
+        // shrink elastic supply
+        await this.elastic.setCoefficient(toFixedPointBigNumber(0.75, 10, 18));
+
+        // bob stakes
+        this.res1 = await this.geyser.stake(tokens(100), [], { from: bob });
+      });
+
+      it('should decrease then shrink elastic token balance of first user', async function () {
+        expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(675), TOKEN_DELTA);
+      });
+
+      it('should shrink then decrease elastic token balance of second user', async function () {
+        expect(await this.elastic.balanceOf(bob)).to.be.bignumber.closeTo(tokens(650), TOKEN_DELTA);
+      });
+
+      it('should shrink total staked', async function () {
+        expect(await this.geyser.totalStaked()).to.be.bignumber.closeTo(tokens(175), TOKEN_DELTA);
+      });
+
+      it('should decrease staking balance for users who staked before shrinking', async function () {
+        expect(await this.geyser.totalStakedFor(alice)).to.be.bignumber.closeTo(tokens(75), TOKEN_DELTA);
+      });
+
+      it('should not change staking balance for users who staked after shrinking', async function () {
+        expect(await this.geyser.totalStakedFor(bob)).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+      });
+
+      it('should not change previously minted shares', async function () {
+        expect((await this.geyser.userTotals(alice)).shares).to.be.bignumber.closeTo(shares(100), SHARE_DELTA);
+      });
+
+      it('should mint new shares at higher rate', async function () {
+        expect((await this.geyser.userTotals(bob)).shares).to.be.bignumber.closeTo(shares(100 / 0.75), SHARE_DELTA);
+      });
+
+      it('should combine to increase the total staking shares', async function () {
+        expect(await this.geyser.totalStakingShares()).to.be.bignumber.closeTo(shares(100 + 100 / 0.75), SHARE_DELTA);
+      });
+
+      it('should emit each Staked event', async function () {
+        const e0 = this.res0.logs.filter(l => l.event === 'Staked')[0];
+        expect(e0.args.user).eq(alice);
+        expect(e0.args.amount).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+        expect(e0.args.total).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+
+        const e1 = this.res1.logs.filter(l => l.event === 'Staked')[0];
+        expect(e1.args.user).eq(bob);
+        expect(e1.args.amount).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+        expect(e1.args.total).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+      });
+
+    });
+
+  });
+
+
+  describe('preview', function () {
+
+    describe('when supply expands', function () {
+
+      beforeEach(async function () {
+        // alice stakes at day 10
+        await time.increaseTo(this.t0.add(days(10)));
+        await this.geyser.stake(tokens(100), [], { from: alice });
+
+        // expand elastic supply
+        await this.elastic.setCoefficient(toFixedPointBigNumber(1.1, 10, 18));
+
+        // bob stakes at day 10
+        await this.geyser.stake(tokens(100), [], { from: bob });
+
+        // advance to day 40
+        await time.increaseTo(this.t0.add(days(40)));
+
+        // alice does preview of unstake all
+        this.res = await this.geyser.preview(alice, await this.geyser.totalStakedFor(alice), tokens(0));
+
+        // summary
+        // 40 days elapsed
+        // tokens unlocked: 100 (1000 total, 40/400 days)
+        // time bonus: +1.0x (0.0 -> 2.0, 30/60 days)
+        // alice: 100 * 1.1 tokens
+        // bob: 100 tokens
+        // equivalent staking time (30 days)
+        // total staking days: 6300
+      });
+
+      it('should account for increased stake in expected reward', async function () {
+        // alice boosted: 110 tokens * 30 days * 2.0x time bonus = 6600
+        const inflated = 110 * 30 * 2.0;
+        const portion = inflated / (6300 - 3300 + inflated);
+        expect(this.res[0]).to.be.bignumber.closeTo(tokens(portion * 100), TOKEN_DELTA);
+      });
+
+      it('should return 2x for expected bonus', async function () {
+        // time bonus
+        expect(this.res[1]).to.be.bignumber.closeTo(bonus(2.0), TOKEN_DELTA);
+      });
+
+      it('should return total for expected share seconds burned', async function () {
+        expect(this.res[2]).to.be.bignumber.closeTo(
+          shares(24 * 60 * 60 * 30 * 100),
+          shares(1 * 100) // one share second
+        );
+      });
+
+      it('should return 10% for expected total unlocked', async function () {
+        expect(this.res[3]).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+      });
+    });
+
+    describe('when supply decreases', function () {
+
+      beforeEach(async function () {
+        // alice stakes at day 10
+        await time.increaseTo(this.t0.add(days(10)));
+        await this.geyser.stake(tokens(100), [], { from: alice });
+
+        // shrink elastic supply
+        await this.elastic.setCoefficient(toFixedPointBigNumber(0.75, 10, 18));
+
+        // bob stakes at day 10
+        await this.geyser.stake(tokens(100), [], { from: bob });
+
+        // advance to day 40
+        await time.increaseTo(this.t0.add(days(40)));
+
+        // alice does preview of unstake all
+        this.res = await this.geyser.preview(alice, await this.geyser.totalStakedFor(alice), tokens(0));
+
+        // summary
+        // 40 days elapsed
+        // tokens unlocked: 100 (1000 total, 40/400 days)
+        // time bonus: +1.0x (0.0 -> 2.0, 30/60 days)
+        // alice: 100 * 0.75 tokens * 30 days = 2250 staking days
+        // bob: 100 tokens * 30 days = 3000 staking days
+        // total staking days: 5250
+      });
+
+      it('should account for decreased stake in expected reward', async function () {
+        // alice boosted: 75 tokens * 30 days * 2.0x time bonus = 4500
+        const inflated = 75 * 30 * 2.0;
+        const portion = inflated / (5250 - 2250 + inflated);
+        expect(this.res[0]).to.be.bignumber.closeTo(tokens(portion * 100), TOKEN_DELTA);
+      });
+
+      it('should return 2x for expected bonus', async function () {
+        // time bonus
+        expect(this.res[1]).to.be.bignumber.closeTo(bonus(2.0), TOKEN_DELTA);
+      });
+
+      it('should return total for expected share seconds burned', async function () {
+        expect(this.res[2]).to.be.bignumber.closeTo(
+          shares(24 * 60 * 60 * 30 * 100),
+          shares(1 * 100) // one share second
+        );
+      });
+
+      it('should return 10% for expected total unlocked', async function () {
+        expect(this.res[3]).to.be.bignumber.closeTo(tokens(100), TOKEN_DELTA);
+      });
+    });
+
+
+  });
+
+  describe('unstake', function () {
+
+    describe('when supply expands', function () {
+
+      beforeEach(async function () {
+        // alice stakes at day 10
+        await time.increaseTo(this.t0.add(days(10)));
+        await this.geyser.stake(tokens(100), [], { from: alice });
+
+        // expand elastic supply
+        await this.elastic.setCoefficient(toFixedPointBigNumber(1.1, 10, 18));
+
+        // bob stakes at day 10
+        await this.geyser.stake(tokens(100), [], { from: bob });
+
+        // advance to day 40
+        await time.increaseTo(this.t0.add(days(40)));
+
+        // alice unstakes all
+        this.res = await this.geyser.unstake(
+          await this.geyser.totalStakedFor(alice), [],
+          { from: alice }
+        );
+
+        // summary
+        // 40 days elapsed
+        // tokens unlocked: 100 (1000 total, 40/400 days)
+        // time bonus: +1.0x (0.0 -> 2.0, 30/60 days)
+        // alice: 100 * 1.1 tokens
+        // bob: 100 tokens
+        // equivalent staking time (30 days)
+        // total staking days: 6300
+        const raw = 100 * 1.1 * 30;
+        const inflated = raw * 2.0;
+        this.portion = inflated / (6300 - raw + inflated);
+      });
+
+      it('should return staking token to user balance', async function () {
+        expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(1100), TOKEN_DELTA);
+      });
+
+      it('should update the total staked for user', async function () {
+        expect(await this.geyser.totalStakedFor(alice)).to.be.bignumber.equal(tokens(0));
+      });
+
+      it('should disburse expected amount of reward token to user', async function () {
+        expect(await this.reward.balanceOf(alice)).to.be.bignumber.closeTo(
+          tokens(this.portion * 100), TOKEN_DELTA
+        );
+      });
+
+      it('should reduce amount of reward token in unlocked pool', async function () {
+        expect(await this.geyser.totalUnlocked()).to.be.bignumber.closeTo(
+          tokens((1.0 - this.portion) * 100), TOKEN_DELTA
+        );
+      });
+
+      it('should emit unstake and reward events', async function () {
+        const e0 = this.res.logs.filter(l => l.event === 'Unstaked')[0];
+        expect(e0.args.user).eq(alice);
+        expect(e0.args.amount).to.be.bignumber.closeTo(tokens(110), TOKEN_DELTA);
+        expect(e0.args.total).to.be.bignumber.equal(tokens(0));
+
+        const e1 = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e1.args.user).eq(alice);
+        expect(e1.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 100), TOKEN_DELTA);
+      });
+
+      it('should have some small amount of remaining shares for user', async function () {
+        // this remainder is due to integer division and is worth less than the smallest precision of the token
+        // can be cleaned up/used later
+        const s = (await this.geyser.userTotals(alice)).shares;
+        expect(s).to.be.bignumber.greaterThan(new BN(0));
+        expect(s).to.be.bignumber.lessThan(shares(1));
+        expect(await this.geyser.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
+      });
+
+    });
+
+    describe('when supply decreases', function () {
+
+      beforeEach(async function () {
+        // alice stakes at day 10
+        await time.increaseTo(this.t0.add(days(10)));
+        await this.geyser.stake(tokens(100), [], { from: alice });
+
+        // shrink elastic supply
+        await this.elastic.setCoefficient(toFixedPointBigNumber(0.75, 10, 18));
+
+        // bob stakes at day 10
+        await this.geyser.stake(tokens(100), [], { from: bob });
+
+        // advance to day 40
+        await time.increaseTo(this.t0.add(days(40)));
+
+        // alice unstakes all
+        this.res = await this.geyser.unstake(
+          await this.geyser.totalStakedFor(alice), [],
+          { from: alice }
+        );
+
+        // summary
+        // 40 days elapsed
+        // tokens unlocked: 100 (1000 total, 40/400 days)
+        // time bonus: +1.0x (0.0 -> 2.0, 30/60 days)
+        // alice: 100 * 0.75 tokens * 30 days = 2250 staking days
+        // bob: 100 tokens * 30 days = 3000 staking days
+        // total staking days: 5250
+        const raw = 100 * 0.75 * 30;
+        const inflated = raw * 2.0;
+        this.portion = inflated / (5250 - raw + inflated);
+      });
+
+      it('should return staking token to user balance', async function () {
+        expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(750), TOKEN_DELTA);
+      });
+
+      it('should update the total staked for user', async function () {
+        expect(await this.geyser.totalStakedFor(alice)).to.be.bignumber.equal(tokens(0));
+      });
+
+      it('should disburse expected amount of reward token to user', async function () {
+        expect(await this.reward.balanceOf(alice)).to.be.bignumber.closeTo(
+          tokens(this.portion * 100), TOKEN_DELTA
+        );
+      });
+
+      it('should reduce amount of reward token in unlocked pool', async function () {
+        expect(await this.geyser.totalUnlocked()).to.be.bignumber.closeTo(
+          tokens((1.0 - this.portion) * 100), TOKEN_DELTA
+        );
+      });
+
+      it('should emit unstake and reward events', async function () {
+        const e0 = this.res.logs.filter(l => l.event === 'Unstaked')[0];
+        expect(e0.args.user).eq(alice);
+        expect(e0.args.amount).to.be.bignumber.closeTo(tokens(75), TOKEN_DELTA);
+        expect(e0.args.total).to.be.bignumber.equal(tokens(0));
+
+        const e1 = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e1.args.user).eq(alice);
+        expect(e1.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 100), TOKEN_DELTA);
+      });
+
+      it('should have some small amount of remaining shares for user', async function () {
+        // this remainder is due to integer division and is worth less than the smallest precision of the token
+        // can be cleaned up/used later
+        const s = (await this.geyser.userTotals(alice)).shares;
+        expect(s).to.be.bignumber.greaterThan(new BN(0));
+        expect(s).to.be.bignumber.lessThan(shares(1));
+        expect(await this.geyser.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
       });
 
     });

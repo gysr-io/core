@@ -30,3 +30,19 @@ To run some subset of tests
 ```
 npx mocha --exit --grep withdraw
 ```
+
+
+## Deploy
+
+To deploy GYSR token to Ropsten
+```
+npx truffle migrate --network ropsten --f 1 --to 1
+```
+
+Once GYSR token is deployed, set the `GYSR_ADDRESS` constant at the top of `migrations/2_deploy_factory.js`.
+
+
+To deploy the Geyser factory contract to Ropsten
+```
+npx truffle migrate --network ropsten --f 2 --to 2
+```
