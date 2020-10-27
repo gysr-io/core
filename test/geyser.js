@@ -1162,6 +1162,82 @@ describe('geyser', function () {
         expect(mult).to.be.equal(3.0);
       });
     });
+
+    describe('when configured with 0 day time bonus period', function () {
+
+      beforeEach(async function () {
+        // owner creates geyser
+        this.geyser = await Geyser.new(
+          this.staking.address,
+          this.reward.address,
+          bonus(0.5),
+          bonus(2),
+          days(0),
+          this.gysr.address,
+          { from: owner }
+        );
+        // owner funds geyser
+        await this.reward.transfer(owner, tokens(10000), { from: org });
+        await this.reward.approve(this.geyser.address, tokens(100000), { from: owner });
+        await this.geyser.methods['fund(uint256,uint256)'](
+          tokens(1000), days(180),
+          { from: owner }
+        );
+      });
+
+      it('should be max time bonus for t = 0', async function () {
+        const mult = fromFixedPointBigNumber(await this.geyser.timeBonus(0), 10, 18);
+        expect(mult).to.be.equal(3.0);
+      });
+
+      it('should be max time bonus for t > 0 days', async function () {
+        const mult = fromFixedPointBigNumber(await this.geyser.timeBonus(days(30)), 10, 18);
+        expect(mult).to.be.equal(3.0);
+      });
+    });
+
+    describe('when configured with 0.0 max time bonus', function () {
+
+      beforeEach(async function () {
+        // owner creates geyser
+        this.geyser = await Geyser.new(
+          this.staking.address,
+          this.reward.address,
+          bonus(0.0),
+          bonus(0.0),
+          days(90),
+          this.gysr.address,
+          { from: owner }
+        );
+        // owner funds geyser
+        await this.reward.transfer(owner, tokens(10000), { from: org });
+        await this.reward.approve(this.geyser.address, tokens(100000), { from: owner });
+        await this.geyser.methods['fund(uint256,uint256)'](
+          tokens(1000), days(180),
+          { from: owner }
+        );
+      });
+
+      it('should be 1.0 time bonus for t = 0', async function () {
+        const mult = fromFixedPointBigNumber(await this.geyser.timeBonus(0), 10, 18);
+        expect(mult).to.be.equal(1.0);
+      });
+
+      it('should be 1.0 time bonus for 0 < t < period', async function () {
+        const mult = fromFixedPointBigNumber(await this.geyser.timeBonus(days(30)), 10, 18);
+        expect(mult).to.be.equal(1.0);
+      });
+
+      it('should be 1.0 time bonus for t = period', async function () {
+        const mult = fromFixedPointBigNumber(await this.geyser.timeBonus(days(90)), 10, 18);
+        expect(mult).to.be.equal(1.0);
+      });
+
+      it('should be 1.0 time bonus for t > period', async function () {
+        const mult = fromFixedPointBigNumber(await this.geyser.timeBonus(days(120)), 10, 18);
+        expect(mult).to.be.equal(1.0);
+      });
+    });
   });
 
   describe('withdraw', function () {

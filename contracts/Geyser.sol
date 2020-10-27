@@ -18,6 +18,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./IGeyser.sol";
 import "./GeyserPool.sol";
@@ -26,7 +27,7 @@ import "./MathUtils.sol";
 /**
  * @title Geyser
  */
-contract Geyser is IGeyser {
+contract Geyser is IGeyser, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using MathUtils for int128;
@@ -279,7 +280,7 @@ contract Geyser is IGeyser {
     /**
      * @inheritdoc IGeyser
      */
-    function update() external override {
+    function update() external override nonReentrant {
         _update(msg.sender);
     }
 
@@ -325,7 +326,7 @@ contract Geyser is IGeyser {
         address staker,
         address beneficiary,
         uint256 amount
-    ) private {
+    ) private nonReentrant {
         // validate
         require(amount > 0, "Geyser: stake amount is zero");
         require(
@@ -370,7 +371,11 @@ contract Geyser is IGeyser {
      * @param gysr number of GYSR tokens applied to unstaking operation
      * @return number of reward tokens distributed
      */
-    function _unstake(uint256 amount, uint256 gysr) private returns (uint256) {
+    function _unstake(uint256 amount, uint256 gysr)
+        private
+        nonReentrant
+        returns (uint256)
+    {
         // validate
         require(amount > 0, "Geyser: unstake amount is zero");
         require(

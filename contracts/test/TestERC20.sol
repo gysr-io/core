@@ -24,3 +24,13 @@ contract TestLiquidityToken is ERC20 {
         _mint(msg.sender, _totalSupply);
     }
 }
+
+contract TestIndivisibleToken is ERC20 {
+    uint256 DECIMALS = 0;
+    uint256 _totalSupply = 1000;
+
+    constructor() public ERC20("TestIndivisibleToken", "IND") {
+        _setupDecimals(uint8(DECIMALS));
+        _mint(msg.sender, _totalSupply);
+    }
+}
