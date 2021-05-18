@@ -1,10 +1,13 @@
-// deploy geyser factory
+// deploy pool factory
 
-const GeyserFactory = artifacts.require('GeyserFactory');
+const PoolFactory = artifacts.require('PoolFactory');
 
 // set address of GYSR token contract
 const GYSR_ADDRESS = '';
 
+// set initial address of treasury
+const TREASURY_ADDRESS = '';
+
 module.exports = function (deployer) {
-    deployer.deploy(GeyserFactory, GYSR_ADDRESS);
+    deployer.deploy(PoolFactory, GYSR_ADDRESS, TREASURY_ADDRESS);
 }

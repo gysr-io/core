@@ -1,0 +1,25 @@
+/*
+Pool module factory interface
+
+This defines the common module factory interface used by the
+main factory to create the staking and reward modules
+for a new Pool.
+
+https://github.com/gysr-io/core
+
+SPDX-License-Identifier: MIT
+*/
+
+pragma solidity ^0.8.4;
+
+interface IModuleFactory {
+    // events
+    event ModuleCreated(address indexed user, address module);
+
+    /**
+     * @notice create a new Pool module
+     * @param data binary encoded construction parameters
+     * @return address of newly created module
+     */
+    function createModule(bytes calldata data) external returns (address);
+}

@@ -1,8 +1,7 @@
 // configuration for truffle project
 // defines deployment and compilation settings
 
-require('regenerator-runtime/runtime')
-const LedgerWalletProvider = require('truffle-ledger-provider');
+const LedgerWalletProvider = require('@umaprotocol/truffle-ledger-provider');
 
 const INFURA_KEY = "";
 
@@ -36,6 +35,21 @@ module.exports = {
       //from: ''
     },
 
+    kovan: {
+      provider: new LedgerWalletProvider(
+        {
+          networkId: 42,
+          path: "44'/60'/0'/0/0",
+          askConfirm: false,
+          accountsLength: 1,
+          accountsOffset: 0
+        },
+        `https://kovan.infura.io/v3/${INFURA_KEY}`
+      ),
+      network_id: 42,
+      skipDryRun: true
+    },
+
     mainnet: {
       provider: new LedgerWalletProvider(
         {
@@ -53,7 +67,7 @@ module.exports = {
 
   compilers: {
     solc: {
-      version: "0.6.12",
+      version: "0.8.4",
       settings: {
         optimizer: {
           enabled: true,

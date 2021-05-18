@@ -11,7 +11,7 @@ h/t https://github.com/abdk-consulting/abdk-libraries-solidity
 SPDX-License-Identifier: BSD-4-Clause
 */
 
-pragma solidity ^0.6.12;
+pragma solidity ^0.8.4;
 
 library MathUtils {
     /**
@@ -21,46 +21,48 @@ library MathUtils {
      * @return signed 64.64-bit fixed point number
      */
     function logbase2(int128 x) internal pure returns (int128) {
-        require(x > 0);
+        unchecked {
+            require(x > 0);
 
-        int256 msb = 0;
-        int256 xc = x;
-        if (xc >= 0x10000000000000000) {
-            xc >>= 64;
-            msb += 64;
-        }
-        if (xc >= 0x100000000) {
-            xc >>= 32;
-            msb += 32;
-        }
-        if (xc >= 0x10000) {
-            xc >>= 16;
-            msb += 16;
-        }
-        if (xc >= 0x100) {
-            xc >>= 8;
-            msb += 8;
-        }
-        if (xc >= 0x10) {
-            xc >>= 4;
-            msb += 4;
-        }
-        if (xc >= 0x4) {
-            xc >>= 2;
-            msb += 2;
-        }
-        if (xc >= 0x2) msb += 1; // No need to shift xc anymore
+            int256 msb = 0;
+            int256 xc = x;
+            if (xc >= 0x10000000000000000) {
+                xc >>= 64;
+                msb += 64;
+            }
+            if (xc >= 0x100000000) {
+                xc >>= 32;
+                msb += 32;
+            }
+            if (xc >= 0x10000) {
+                xc >>= 16;
+                msb += 16;
+            }
+            if (xc >= 0x100) {
+                xc >>= 8;
+                msb += 8;
+            }
+            if (xc >= 0x10) {
+                xc >>= 4;
+                msb += 4;
+            }
+            if (xc >= 0x4) {
+                xc >>= 2;
+                msb += 2;
+            }
+            if (xc >= 0x2) msb += 1; // No need to shift xc anymore
 
-        int256 result = (msb - 64) << 64;
-        uint256 ux = uint256(x) << (127 - msb);
-        for (int256 bit = 0x8000000000000000; bit > 0; bit >>= 1) {
-            ux *= ux;
-            uint256 b = ux >> 255;
-            ux >>= 127 + b;
-            result += bit * int256(b);
-        }
+            int256 result = (msb - 64) << 64;
+            uint256 ux = uint256(int256(x)) << uint256(127 - msb);
+            for (int256 bit = 0x8000000000000000; bit > 0; bit >>= 1) {
+                ux *= ux;
+                uint256 b = ux >> 255;
+                ux >>= 127 + b;
+                result += bit * int256(b);
+            }
 
-        return int128(result);
+            return int128(result);
+        }
     }
 
     /**
@@ -70,13 +72,17 @@ library MathUtils {
      * @return signed 64.64-bit fixed point number
      */
     function ln(int128 x) internal pure returns (int128) {
-        require(x > 0);
+        unchecked {
+            require(x > 0);
 
-        return
-            int128(
-                (uint256(logbase2(x)) * 0xB17217F7D1CF79ABC9E3B39803F2F6AF) >>
-                    128
-            );
+            return
+                int128(
+                    int256(
+                        (uint256(int256(logbase2(x))) *
+                            0xB17217F7D1CF79ABC9E3B39803F2F6AF) >> 128
+                    )
+                );
+        }
     }
 
     /**
@@ -90,8 +96,10 @@ library MathUtils {
 
         return
             int128(
-                (uint256(logbase2(x)) * 0x4d104d427de7fce20a6e420e02236748) >>
-                    128
+                int256(
+                    (uint256(int256(logbase2(x))) *
+                        0x4d104d427de7fce20a6e420e02236748) >> 128
+                )
             );
     }
 

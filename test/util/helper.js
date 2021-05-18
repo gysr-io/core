@@ -1,18 +1,40 @@
-const { BN } = require('@openzeppelin/test-helpers');
-const { promisify } = require('util');
-const { time } = require('@openzeppelin/test-helpers');
-const { web3 } = require('@openzeppelin/test-environment');
-const { expect } = require('chai');
+const { BN, time } = require('@openzeppelin/test-helpers');
+const { fromWei, toWei } = require('web3-utils')
+const { appendFileSync, existsSync, unlinkSync } = require('fs');
+
 
 // same const used for GYSR, test token, and bonus value returns
 const DECIMALS = 18;
+// max 20% GYSR spending fee
+const FEE = 0.2;
+
+const UNITMAP = {
+  3: 'kwei',
+  6: 'mwei',
+  9: 'gwei',
+  12: 'micro',
+  15: 'milli',
+  18: 'ether',
+  21: 'kether'
+};
+
+const GAS_REPORT = './gas_report.txt';
+var gas_report_initialized = false;
 
 function tokens(x) {
   return toFixedPointBigNumber(x, 10, DECIMALS);
 }
 
+function fromTokens(x) {
+  return fromFixedPointBigNumber(x, 10, DECIMALS);
+}
+
 function bonus(x) {
   return toFixedPointBigNumber(x, 10, DECIMALS);
+}
+
+function fromBonus(x) {
+  return fromFixedPointBigNumber(x, 10, DECIMALS);
 }
 
 function days(x) {
@@ -23,12 +45,21 @@ function shares(x) {
   return new BN(10 ** 6).mul(toFixedPointBigNumber(x, 10, DECIMALS));
 }
 
+async function now() {
+  return time.latest()
+}
+
 function toFixedPointBigNumber(x, base, decimal) {
-  x_ = x;
-  bn = new BN(0);
-  for (i = 0; i < decimal; i++) {
+  // use web3 utils if possible
+  if (base == 10 && decimal in UNITMAP) {
+    return new BN(toWei(x.toString(), UNITMAP[decimal]));
+  }
+
+  var x_ = x;
+  var bn = new BN(0);
+  for (var i = 0; i < decimal; i++) {
     // shift next decimal chunk to integer
-    v = x_;
+    var v = x_;
     for (j = 0; j < i; j++) {
       v *= base;
     }
@@ -47,12 +78,17 @@ function toFixedPointBigNumber(x, base, decimal) {
 }
 
 function fromFixedPointBigNumber(x, base, decimal) {
-  x_ = new BN(x);
-  value = 0.0;
-  for (i = 0; i < decimal; i++) {
+  // use web3 utils if possible
+  if (base == 10 && decimal in UNITMAP) {
+    return parseFloat(fromWei(x, UNITMAP[decimal]));
+  }
+
+  var x_ = new BN(x);
+  var value = 0.0;
+  for (var i = 0; i < decimal; i++) {
     // get next chunk from big number
-    c = (new BN(base)).pow(new BN(decimal - i))
-    v = x_.div(c);
+    var c = (new BN(base)).pow(new BN(decimal - i))
+    var v = x_.div(c);
     x_ = x_.sub(v.mul(c));
 
     // shift bn chunk to decimal and add
@@ -65,12 +101,31 @@ function fromFixedPointBigNumber(x, base, decimal) {
   return value;
 }
 
+function reportGas(contract, method, description, tx) {
+  if (!gas_report_initialized) {
+    // reset
+    if (existsSync(GAS_REPORT)) {
+      unlinkSync(GAS_REPORT);
+    }
+    appendFileSync(GAS_REPORT, 'contract, method, description, gas\n');
+    gas_report_initialized = true;
+  }
+  // write entry
+  const amount = tx.receipt.gasUsed;
+  appendFileSync(GAS_REPORT, `${contract}, ${method}, ${description}, ${amount}\n`);
+}
+
 module.exports = {
   tokens,
+  fromTokens,
   bonus,
+  fromBonus,
   days,
   shares,
+  now,
   toFixedPointBigNumber,
   fromFixedPointBigNumber,
-  DECIMALS
+  reportGas,
+  DECIMALS,
+  FEE
 };
