@@ -37,29 +37,35 @@ npx truffle compile && npx mocha --exit --recursive --grep ERC20CompetitiveRewar
 
 ## Deploy
 
+Copy `.env.template` to `.env` and define the `INFURA_KEY`, `DEPLOYER_INDEX`,
+and `TREASURY_ADDRESS` variables.
+
+
 To deploy GYSR token to Kovan
 ```
 npx truffle migrate --network kovan --f 1 --to 1
 ```
 
-Once GYSR token is deployed, set the `GYSR_ADDRESS` constant at the top of `migrations/2_deploy_factory.js`.
-Also make sure to set the initial `TREASURY_ADDRESS` at the top of this file.
+Once GYSR token is deployed, define the `GYSR_ADDRESS` variable in your `.env` file.
+
 
 To deploy the Geyser factory contract to Kovan
 ```
 npx truffle migrate --network kovan --f 2 --to 2
 ```
 
-Set the `FACTORY_ADDRESS` constant at the top of  `migrations/3_deploy_module_factory_staking.js`.
+Once the factory is deployed, define the `FACTORY_ADDRESS` variable in your `.env` file.
+
 
 To deploy the ERC20 staking module factory to Kovan
 ```
 npx truffle migrate --network kovan --f 3 --to 3
 ```
 
-Set the `FACTORY_ADDRESS` constant at the top of  `migrations/4_deploy_module_factory_competitive.js`.
 
 To deploy the ERC20 competitive reward module factory to Kovan
 ```
 npx truffle migrate --network kovan --f 4 --to 4
 ```
+
+Follow the remaining migration steps to deploy all contracts and libraries.

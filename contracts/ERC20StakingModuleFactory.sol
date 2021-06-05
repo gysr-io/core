@@ -1,14 +1,25 @@
 /*
-ERC20 Staking Module Factory
+ERC20StakingModuleFactory
+
+https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "./interfaces/IModuleFactory.sol";
 import "./ERC20StakingModule.sol";
 
+/**
+ * @title ERC20 staking module factory
+ *
+ * @notice this factory contract handles deployment for the
+ * ERC20StakingModule contract
+ *
+ * @dev it is called by the parent PoolFactory and is responsible
+ * for parsing constructor arguments before creating a new contract
+ */
 contract ERC20StakingModuleFactory is IModuleFactory {
     /**
      * @inheritdoc IModuleFactory

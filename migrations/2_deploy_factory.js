@@ -1,13 +1,10 @@
 // deploy pool factory
 
+const dotenv = require('dotenv');
+dotenv.config();
+
 const PoolFactory = artifacts.require('PoolFactory');
 
-// set address of GYSR token contract
-const GYSR_ADDRESS = '';
-
-// set initial address of treasury
-const TREASURY_ADDRESS = '';
-
 module.exports = function (deployer) {
-    deployer.deploy(PoolFactory, GYSR_ADDRESS, TREASURY_ADDRESS);
+    deployer.deploy(PoolFactory, process.env.GYSR_ADDRESS, process.env.TREASURY_ADDRESS);
 }

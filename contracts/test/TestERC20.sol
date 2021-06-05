@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+/**
+ * @title Test token
+ * @dev basic ERC20 token for testing
+ */
 contract TestToken is ERC20 {
     uint256 _totalSupply = 50 * 10**6 * 10**18;
 
@@ -13,6 +17,10 @@ contract TestToken is ERC20 {
     }
 }
 
+/**
+ * @title Test liquidity token
+ * @dev another basic ERC20 token for testing
+ */
 contract TestLiquidityToken is ERC20 {
     uint256 _totalSupply = 1 * 10**6 * 10**18;
 
@@ -21,6 +29,10 @@ contract TestLiquidityToken is ERC20 {
     }
 }
 
+/**
+ * @title Test indivisible token
+ * @dev test ERC20 token with no decimals
+ */
 contract TestIndivisibleToken is ERC20 {
     uint256 _totalSupply = 1000;
 

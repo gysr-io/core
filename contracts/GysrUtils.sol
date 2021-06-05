@@ -1,15 +1,21 @@
 /*
-GYSR utilities
+GYSRUtils
 
-This library implements utility methods for the GYSR multiplier and spending mechanics
+https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "./MathUtils.sol";
 
+/**
+ * @title GYSR utilities
+ *
+ * @notice this library implements utility methods for the GYSR multiplier
+ * and spending mechanics
+ */
 library GysrUtils {
     using MathUtils for int128;
 
@@ -18,7 +24,8 @@ library GysrUtils {
     uint256 public constant GYSR_PROPORTION = 10**(DECIMALS - 2); // 1%
 
     /**
-     * @notice compute GYSR bonus as a function of usage ratio, stake amount, and GYSR spent
+     * @notice compute GYSR bonus as a function of usage ratio, stake amount,
+     * and GYSR spent
      * @param gysr number of GYSR token applied to bonus
      * @param amount number of tokens or shares to unstake
      * @param total number of tokens or shares in overall pool

@@ -1,17 +1,19 @@
 /*
-Pool module factory interface
-
-This defines the common module factory interface used by the
-main factory to create the staking and reward modules
-for a new Pool.
+IModuleFactory
 
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
+/**
+ * @title Module factory interface
+ *
+ * @notice this defines the common module factory interface used by the
+ * main factory to create the staking and reward modules for a new Pool.
+ */
 interface IModuleFactory {
     // events
     event ModuleCreated(address indexed user, address module);

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+/**
+ * @title Test fee token
+ * @dev mocked up transfer fee token
+ */
 contract TestFeeToken is ERC20 {
     uint256 _totalSupply = 10 * 10**6 * 10**18;
     address _feeAddress = 0x0000000000000000000000000000000000000FEE;

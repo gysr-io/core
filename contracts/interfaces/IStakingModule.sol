@@ -1,14 +1,12 @@
 /*
-Staking Module interface
-
-This defines the staking module interface
+IStakingModule
 
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -17,7 +15,10 @@ import "./IEvents.sol";
 import "../OwnerController.sol";
 
 /**
- * @title IStakingModule interface
+ * @title Staking module interface
+ *
+ * @notice this contract defines the common interface that any staking module
+ * must implement to be compatible with the modular Pool architecture.
  */
 abstract contract IStakingModule is OwnerController, IEvents {
     // constants

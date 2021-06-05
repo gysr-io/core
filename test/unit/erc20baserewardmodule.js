@@ -565,7 +565,6 @@ describe('ERC20BaseRewardModule', function () {
         expect(await this.module.fundingCount(this.token.address)).to.be.bignumber.equal(new BN(16));
       });
 
-      // TODO move these gas cost checks to another test group
       it('gas cost of update() should be under 1M', async function () {
         const res = await this.module.update(constants.ZERO_ADDRESS, { from: owner });
         expect(res.receipt.gasUsed).is.lessThan(10 ** 6);

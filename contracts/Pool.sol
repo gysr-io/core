@@ -1,16 +1,12 @@
 /*
 Pool
 
-This implements the GYSR core Pool contract. It supports generalized
-incentive mechanisms through a modular architecture, where
-staking and reward logic is contained in child contracts.
-
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -25,6 +21,10 @@ import "./OwnerController.sol";
 
 /**
  * @title Pool
+ *
+ * @notice this implements the GYSR core Pool contract. It supports generalized
+ * incentive mechanisms through a modular architecture, where
+ * staking and reward logic is contained in child contracts.
  */
 contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
     using SafeERC20 for IERC20;
@@ -135,17 +135,10 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
         bytes calldata stakingdata,
         bytes calldata rewarddata
     ) external override nonReentrant {
-        address account;
-        uint256 shares;
-        (account, shares) = _staking.stake(msg.sender, amount, stakingdata);
-        uint256 spent;
-        uint256 vested;
-        (spent, vested) = _reward.stake(
-            account,
-            msg.sender,
-            shares,
-            rewarddata
-        );
+        (address account, uint256 shares) =
+            _staking.stake(msg.sender, amount, stakingdata);
+        (uint256 spent, uint256 vested) =
+            _reward.stake(account, msg.sender, shares, rewarddata);
         _processGysr(spent, vested);
     }
 
@@ -157,17 +150,10 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
         bytes calldata stakingdata,
         bytes calldata rewarddata
     ) external override nonReentrant {
-        address account;
-        uint256 shares;
-        (account, shares) = _staking.unstake(msg.sender, amount, stakingdata);
-        uint256 spent;
-        uint256 vested;
-        (spent, vested) = _reward.unstake(
-            account,
-            msg.sender,
-            shares,
-            rewarddata
-        );
+        (address account, uint256 shares) =
+            _staking.unstake(msg.sender, amount, stakingdata);
+        (uint256 spent, uint256 vested) =
+            _reward.unstake(account, msg.sender, shares, rewarddata);
         _processGysr(spent, vested);
     }
 
@@ -179,17 +165,10 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
         bytes calldata stakingdata,
         bytes calldata rewarddata
     ) external override nonReentrant {
-        address account;
-        uint256 shares;
-        (account, shares) = _staking.claim(msg.sender, amount, stakingdata);
-        uint256 spent;
-        uint256 vested;
-        (spent, vested) = _reward.claim(
-            account,
-            msg.sender,
-            shares,
-            rewarddata
-        );
+        (address account, uint256 shares) =
+            _staking.claim(msg.sender, amount, stakingdata);
+        (uint256 spent, uint256 vested) =
+            _reward.claim(account, msg.sender, shares, rewarddata);
         _processGysr(spent, vested);
     }
 
@@ -246,7 +225,7 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
     // -- Pool internal -----------------------------------------------------
 
     /**
-     * @dev internal method to process GYSR spending and vesting
+     * @dev private method to process GYSR spending and vesting
      * @param spent number of tokens to unstake
      * @param vested data passed to staking module
      */

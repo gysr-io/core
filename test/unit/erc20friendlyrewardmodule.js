@@ -858,6 +858,11 @@ describe('ERC20FriendlyRewardModule', function () {
           { user: alice, amount: tokens(1) }
         );
       });
+
+      it('report gas', async function () {
+        reportGas('ERC20FriendlyRewardModule', 'claim', '', this.res)
+      });
+
     });
 
     describe('when one user claims with more shares than the last stake', function () {

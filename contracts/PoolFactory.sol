@@ -1,15 +1,12 @@
 /*
-Pool Factory
-
-This implements the Pool factory contract which allows any user to
-easily configure and deploy their own Pool
+PoolFactory
 
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "./interfaces/IPoolFactory.sol";
 import "./interfaces/IModuleFactory.sol";
@@ -18,6 +15,19 @@ import "./interfaces/IRewardModule.sol";
 import "./OwnerController.sol";
 import "./Pool.sol";
 
+/**
+ * @title Pool factory
+ *
+ * @notice this implements the Pool factory contract which allows any user to
+ * easily configure and deploy their own Pool
+ *
+ * @dev it relies on a system of sub-factories which are responsible for the
+ * creation of underlying staking and reward modules. This primary factory
+ * calls each module factory and assembles the overall Pool contract.
+ *
+ * this contract also manages various privileged platform settings including
+ * treasury address, fee amount, and module factory whitelist.
+ */
 contract PoolFactory is IPoolFactory, OwnerController {
     // events
     event PoolCreated(address indexed user, address pool);
@@ -137,6 +147,7 @@ contract PoolFactory is IPoolFactory, OwnerController {
     function setWhitelist(address factory_, uint256 type_) external {
         requireController();
         require(type_ <= uint256(ModuleFactoryType.Reward), "f4");
+        require(factory_ != address(0), "f5");
         emit WhitelistUpdated(factory_, uint256(whitelist[factory_]), type_);
         whitelist[factory_] = ModuleFactoryType(type_);
     }

@@ -1,16 +1,29 @@
 /*
-ERC20 Friendly Reward Module
+ERC20FriendlyRewardModule
+
+https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "./interfaces/IRewardModule.sol";
 import "./interfaces/IEvents.sol";
 import "./ERC20BaseRewardModule.sol";
 import "./GysrUtils.sol";
 
+/**
+ * @title ERC20 friendly reward module
+ *
+ * @notice this reward module distributes a single ERC20 token as the staking reward.
+ * It is designed to offer simple and predictable reward mechanics.
+ *
+ * @dev rewards are immutable once earned, and can be claimed by the user at
+ * any time. The module can be configured with a linear vesting schedule to
+ * incentivize longer term staking. The user can spend GYSR at the time of
+ * staking to receive a multiplier on their earning rate.
+ */
 contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     using GysrUtils for uint256;
 
@@ -30,13 +43,15 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     mapping(address => Stake[]) public stakes;
 
     // total shares without GYSR multiplier applied
-    uint256 public totalRawStakingShares = 0;
+    uint256 public totalRawStakingShares;
     // total shares with GYSR multiplier applied
-    uint256 public totalStakingShares = 0;
+    uint256 public totalStakingShares;
     // counter representing the current rate of rewards per share
-    uint256 public rewardsPerStakedShare = 0;
+    uint256 public rewardsPerStakedShare;
     // value to keep track of earnings to be put back into the pool
-    uint256 public rewardDust = 0;
+    uint256 public rewardDust;
+    // timestamp of last update
+    uint256 public lastUpdated;
 
     // minimum ratio of earned rewards measured against FULL_VESTING (i.e. 2.5 * 10^17 would be 25%)
     uint256 public immutable vestingStart;
@@ -72,10 +87,14 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      */
-    function tokens() external view override returns (address[] memory) {
-        address[] memory arr = new address[](1);
-        arr[0] = address(_token);
-        return arr;
+    function tokens()
+        external
+        view
+        override
+        returns (address[] memory tokens_)
+    {
+        tokens_ = new address[](1);
+        tokens_[0] = address(_token);
     }
 
     /**
@@ -88,10 +107,14 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      */
-    function balances() external view override returns (uint256[] memory) {
-        uint256[] memory arr = new uint256[](1);
-        arr[0] = totalLocked();
-        return arr;
+    function balances()
+        external
+        view
+        override
+        returns (uint256[] memory balances_)
+    {
+        balances_ = new uint256[](1);
+        balances_[0] = totalLocked();
     }
 
     /**
@@ -110,6 +133,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         uint256 shares,
         bytes calldata data
     ) external override onlyOwner returns (uint256, uint256) {
+        _update();
         return _stake(account, user, shares, data);
     }
 
@@ -129,9 +153,8 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         bytes calldata data
     ) internal returns (uint256, uint256) {
         require(data.length == 0 || data.length == 32, "frm2");
-        _update();
 
-        uint256 gysr = 0;
+        uint256 gysr;
         if (data.length == 32) {
             assembly {
                 gysr := calldataload(164)
@@ -166,6 +189,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         uint256 shares,
         bytes calldata
     ) external override onlyOwner returns (uint256, uint256) {
+        _update();
         return _unstake(account, user, shares);
     }
 
@@ -182,12 +206,11 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         address user,
         uint256 shares
     ) internal returns (uint256, uint256) {
-        _update();
-        // redeem FILO
+        // redeem first-in-last-out
         uint256 sharesLeftToBurn = shares;
         Stake[] storage userStakes = stakes[account];
-        uint256 rewardAmount = 0;
-        uint256 gysrVested = 0;
+        uint256 rewardAmount;
+        uint256 gysrVested;
         uint256 preVestingRewards;
         uint256 timeVestingCoeff;
         while (sharesLeftToBurn > 0) {
@@ -270,13 +293,10 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         address user,
         uint256 shares,
         bytes calldata data
-    ) external override onlyOwner returns (uint256, uint256) {
+    ) external override onlyOwner returns (uint256 spent, uint256 vested) {
         _update();
-        uint256 spent;
-        uint256 vested;
         _unstake(account, user, shares);
         (spent, vested) = _stake(account, user, shares, data);
-        return (spent, vested);
     }
 
     /**
@@ -299,7 +319,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
 
     /**
      * @notice compute vesting multiplier as function of staking time
-     * @param time length of time for which the tokens have been staked
+     * @param time epoch time at which the tokens were staked
      * @return vesting multiplier rewards
      */
     function timeVestingCoefficient(uint256 time)
@@ -307,12 +327,6 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         view
         returns (uint256)
     {
-        /*
-        .5x -> 1x over 90 days
-        30 days in = .66666
-         .5     30           1     .5
-        MIN + (timeStaked * (MAX - MIN)) / 90 
-        */
         if (vestingPeriod == 0) return FULL_VESTING;
         uint256 stakeTime = block.timestamp - time;
         if (stakeTime > vestingPeriod) return FULL_VESTING;
@@ -370,7 +384,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     function _update() private {
         lastUpdated = block.timestamp;
 
-        if (totalStakingShares <= 0) {
+        if (totalStakingShares == 0) {
             rewardsPerStakedShare = 0;
             return;
         }

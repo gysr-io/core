@@ -1,15 +1,18 @@
 /*
-GYSR event system
-
-Common interface to define GYSR event system
+IEvents
 
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
  */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
+/**
+ * @title GYSR event system
+ *
+ * @notice common interface to define GYSR event system
+ */
 interface IEvents {
     // staking
     event Staked(

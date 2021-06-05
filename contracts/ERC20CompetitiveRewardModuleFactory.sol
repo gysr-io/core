@@ -1,14 +1,25 @@
 /*
-ERC20 Competitive Reward Module Factory
+ERC20CompetitiveRewardModuleFactory
+
+https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "./interfaces/IModuleFactory.sol";
 import "./ERC20CompetitiveRewardModule.sol";
 
+/**
+ * @title ERC20 competitive reward module factory
+ *
+ * @notice this factory contract handles deployment for the
+ * ERC20CompetitiveRewardModule contract
+ *
+ * @dev it is called by the parent PoolFactory and is responsible
+ * for parsing constructor arguments before creating a new contract
+ */
 contract ERC20CompetitiveRewardModuleFactory is IModuleFactory {
     /**
      * @inheritdoc IModuleFactory

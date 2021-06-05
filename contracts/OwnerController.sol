@@ -1,13 +1,21 @@
-// SPDX-License-Identifier: MIT
+/*
+OwnerController
 
-pragma solidity ^0.8.4;
+https://github.com/gysr-io/core
+
+SPDX-License-Identifier: MIT
+*/
+
+pragma solidity 0.8.4;
 
 /**
- * @dev This is an adapted version of the OpenZeppelin Ownable contract
+ * @title Owner controller
  *
- * The contract has been modified to implement an owner-controller access model. This
- * allows the owner to designate an additional account as the controller to perform
- * restricted operations.
+ * @notice this base contract implements an owner-controller access model.
+ *
+ * @dev the contract is an adapted version of the OpenZeppelin Ownable contract.
+ * It allows the owner to designate an additional account as the controller to
+ * perform restricted operations.
  *
  * Other changes include supporting role verification with a require method
  * in addition to the modifier option, and removing some unneeded functionality.
@@ -15,7 +23,6 @@ pragma solidity ^0.8.4;
  * Original contract here:
  * https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol
  */
-
 contract OwnerController {
     address private _owner;
     address private _controller;
@@ -30,9 +37,6 @@ contract OwnerController {
         address indexed newController
     );
 
-    /**
-     * @dev Initializes the contract setting the deployer as the initial owner.
-     */
     constructor() {
         _owner = msg.sender;
         _controller = msg.sender;
@@ -91,6 +95,7 @@ contract OwnerController {
      */
     function transferOwnership(address newOwner) public virtual {
         requireOwner();
+        require(newOwner != address(0), "oc3");
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
     }
@@ -101,6 +106,7 @@ contract OwnerController {
      */
     function transferControl(address newController) public virtual {
         requireOwner();
+        require(newController != address(0), "oc4");
         emit ControlTransferred(_controller, newController);
         _controller = newController;
     }

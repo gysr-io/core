@@ -1,20 +1,25 @@
 /*
-ERC20 Staking Module
+ERC20StakingModule
 
-This staking module allows users to deposit an amount of ERC20 token
-in exchange for shares credited to their address. When the user
-unstakes, these shares will be burned and a reward will be distributed.
+https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./interfaces/IStakingModule.sol";
 
+/**
+ * @title ERC20 staking module
+ *
+ * @notice this staking module allows users to deposit an amount of ERC20 token
+ * in exchange for shares credited to their address. When the user
+ * unstakes, these shares will be burned and a reward will be distributed.
+ */
 contract ERC20StakingModule is IStakingModule {
     using SafeERC20 for IERC20;
 
@@ -39,10 +44,14 @@ contract ERC20StakingModule is IStakingModule {
     /**
      * @inheritdoc IStakingModule
      */
-    function tokens() external view override returns (address[] memory) {
-        address[] memory arr = new address[](1);
-        arr[0] = address(_token);
-        return arr;
+    function tokens()
+        external
+        view
+        override
+        returns (address[] memory tokens_)
+    {
+        tokens_ = new address[](1);
+        tokens_[0] = address(_token);
     }
 
     /**
@@ -52,11 +61,10 @@ contract ERC20StakingModule is IStakingModule {
         external
         view
         override
-        returns (uint256[] memory)
+        returns (uint256[] memory balances_)
     {
-        uint256[] memory arr = new uint256[](1);
-        arr[0] = _balance(user);
-        return arr;
+        balances_ = new uint256[](1);
+        balances_[0] = _balance(user);
     }
 
     /**
@@ -69,10 +77,9 @@ contract ERC20StakingModule is IStakingModule {
     /**
      * @inheritdoc IStakingModule
      */
-    function totals() public view override returns (uint256[] memory) {
-        uint256[] memory arr = new uint256[](1);
-        arr[0] = _token.balanceOf(address(this));
-        return arr;
+    function totals() public view override returns (uint256[] memory totals_) {
+        totals_ = new uint256[](1);
+        totals_[0] = _token.balanceOf(address(this));
     }
 
     /**
@@ -96,7 +103,7 @@ contract ERC20StakingModule is IStakingModule {
             (totalShares > 0)
                 ? (totalShares * actual) / total
                 : actual * INITIAL_SHARES_PER_TOKEN;
-        require(minted > 0, "sm2: stake amount too small");
+        require(minted > 0, "sm2");
 
         // update user staking info
         shares[user] += minted;
@@ -120,12 +127,12 @@ contract ERC20StakingModule is IStakingModule {
         // validate and get shares
         uint256 burned = _shares(user, amount);
 
-        // unstake
-        _token.safeTransfer(user, amount);
-
         // burn shares
         totalShares -= burned;
         shares[user] -= burned;
+
+        // unstake
+        _token.safeTransfer(user, amount);
 
         emit Unstaked(user, address(_token), amount, burned);
 
@@ -170,23 +177,21 @@ contract ERC20StakingModule is IStakingModule {
      * @dev internal helper to validate and convert user stake amount to shares
      * @param user address of user
      * @param amount number of tokens to consider
-     * @return equivalent number of shares
+     * @return shares_ equivalent number of shares
      */
     function _shares(address user, uint256 amount)
         private
         view
-        returns (uint256)
+        returns (uint256 shares_)
     {
         // validate
         require(amount > 0, "sm3");
         require(totalShares > 0, "sm4");
 
         // convert token amount to shares
-        uint256 s = (totalShares * amount) / _token.balanceOf(address(this));
+        shares_ = (totalShares * amount) / _token.balanceOf(address(this));
 
-        require(s > 0, "sm5");
-        require(shares[user] >= s, "sm6");
-
-        return s;
+        require(shares_ > 0, "sm5");
+        require(shares[user] >= shares_, "sm6");
     }
 }

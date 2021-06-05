@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC777/ERC777.sol";
 import "@openzeppelin/contracts/token/ERC777/IERC777Sender.sol";
@@ -8,6 +8,10 @@ import "@openzeppelin/contracts/utils/introspection/ERC1820Implementer.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC1820Registry.sol";
 import "../interfaces/IPool.sol";
 
+/**
+ * @title Test reentrant token
+ * @dev basic ERC777 token for reentrancy testing
+ */
 contract TestReentrantToken is ERC777 {
     uint256 _totalSupply = 10 * 10**6 * 10**18;
 
@@ -16,6 +20,10 @@ contract TestReentrantToken is ERC777 {
     }
 }
 
+/**
+ * @title Test reentrancy proxy
+ * @dev mocked up reentrancy attack
+ */
 contract TestReentrantProxy is IERC777Sender, ERC1820Implementer {
     address private _pool;
     uint256 private _last;

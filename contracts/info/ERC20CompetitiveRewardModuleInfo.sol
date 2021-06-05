@@ -1,12 +1,12 @@
 /*
-Info library for the ERC20 Competitive Reward Module
+ERC20CompetitiveRewardModuleInfo
 
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -14,12 +14,19 @@ import "../interfaces/IRewardModule.sol";
 import "../ERC20CompetitiveRewardModule.sol";
 import "../GysrUtils.sol";
 
-library ERC20CompetitiveRewardInfo {
+/**
+ * @title ERC20 competitive reward module info library
+ *
+ * @notice this library provides read-only convenience functions to query
+ * additional information about the ERC20CompetitiveRewardModule contract.
+ */
+library ERC20CompetitiveRewardModuleInfo {
     using GysrUtils for uint256;
 
     /**
      * @notice convenience function to get token metadata in a single call
      * @param module address of reward module
+     * @return address
      * @return name
      * @return symbol
      * @return decimals
@@ -28,6 +35,7 @@ library ERC20CompetitiveRewardInfo {
         public
         view
         returns (
+            address,
             string memory,
             string memory,
             uint8
@@ -35,7 +43,7 @@ library ERC20CompetitiveRewardInfo {
     {
         IRewardModule m = IRewardModule(module);
         IERC20Metadata tkn = IERC20Metadata(m.tokens()[0]);
-        return (tkn.name(), tkn.symbol(), tkn.decimals());
+        return (address(tkn), tkn.name(), tkn.symbol(), tkn.decimals());
     }
 
     /**
@@ -72,6 +80,10 @@ library ERC20CompetitiveRewardInfo {
             addr,
             shares
         );
+        if (rawShareSeconds == 0) {
+            return (0, 0, 0);
+        }
+
         uint256 timeBonus = (bonusShareSeconds * 1e18) / rawShareSeconds;
 
         // apply gysr bonus
@@ -98,11 +110,11 @@ library ERC20CompetitiveRewardInfo {
         ERC20CompetitiveRewardModule m = ERC20CompetitiveRewardModule(module);
 
         // compute expected updates to global totals
-        uint256 deltaUnlocked = 0;
+        uint256 deltaUnlocked;
         address tkn = m.tokens()[0];
         uint256 totalLockedShares = m.lockedShares(tkn);
         if (totalLockedShares != 0) {
-            uint256 sharesToUnlock = 0;
+            uint256 sharesToUnlock;
             for (uint256 i = 0; i < m.fundingCount(tkn); i++) {
                 sharesToUnlock = sharesToUnlock + m.unlockable(tkn, i);
             }
@@ -126,34 +138,29 @@ library ERC20CompetitiveRewardInfo {
         address addr,
         uint256 shares
     ) public view returns (uint256, uint256) {
+        require(shares > 0, "crmi1");
+
         ERC20CompetitiveRewardModule m = ERC20CompetitiveRewardModule(module);
 
-        uint256 rawShareSeconds = 0;
-        uint256 timeBonusShareSeconds = 0;
+        uint256 rawShareSeconds;
+        uint256 timeBonusShareSeconds;
 
         // compute first-in-last-out, time bonus weighted, share seconds
-        uint256 i = m.stakeCount(addr) - 1;
+        uint256 i = m.stakeCount(addr);
         while (shares > 0) {
+            require(i > 0, "crmi2");
+            i -= 1;
             uint256 s;
             uint256 time;
             (s, time) = m.stakes(addr, i);
             time = block.timestamp - time;
 
-            if (s < shares) {
-                rawShareSeconds = rawShareSeconds + (s * time);
-                timeBonusShareSeconds =
-                    timeBonusShareSeconds +
-                    ((s * time * m.timeBonus(time)) / 1e18);
-                shares = shares - s;
-            } else {
-                rawShareSeconds = rawShareSeconds + (shares * time);
-                timeBonusShareSeconds =
-                    timeBonusShareSeconds +
-                    ((shares * time * m.timeBonus(time)) / 1e18);
-                break;
-            }
-            // this will throw on underflow
-            i = i - 1;
+            // only redeem partial stake if more shares left than needed to burn
+            s = s < shares ? s : shares;
+
+            rawShareSeconds += (s * time);
+            timeBonusShareSeconds += ((s * time * m.timeBonus(time)) / 1e18);
+            shares -= s;
         }
         return (rawShareSeconds, timeBonusShareSeconds);
     }

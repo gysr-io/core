@@ -1,9 +1,10 @@
 // configuration for truffle project
 // defines deployment and compilation settings
 
-const LedgerWalletProvider = require('@umaprotocol/truffle-ledger-provider');
+const dotenv = require('dotenv');
+dotenv.config();
 
-const INFURA_KEY = "";
+const LedgerWalletProvider = require('@umaprotocol/truffle-ledger-provider');
 
 module.exports = {
   networks: {
@@ -20,12 +21,12 @@ module.exports = {
       provider: new LedgerWalletProvider(
         {
           networkId: 3,
-          path: "44'/60'/0'/0/0",
+          path: `44'/60'/${process.env.DEPLOYER_INDEX || 0}'/0/0`,
           askConfirm: false,
           accountsLength: 1,
           accountsOffset: 0
         },
-        `https://ropsten.infura.io/v3/${INFURA_KEY}`
+        `https://ropsten.infura.io/v3/${process.env.INFURA_KEY}`
       ),
       network_id: 3,
       gas: 5250000,
@@ -39,12 +40,12 @@ module.exports = {
       provider: new LedgerWalletProvider(
         {
           networkId: 42,
-          path: "44'/60'/0'/0/0",
+          path: `44'/60'/${process.env.DEPLOYER_INDEX || 0}'/0/0`,
           askConfirm: false,
           accountsLength: 1,
           accountsOffset: 0
         },
-        `https://kovan.infura.io/v3/${INFURA_KEY}`
+        `https://kovan.infura.io/v3/${process.env.INFURA_KEY}`
       ),
       network_id: 42,
       skipDryRun: true
@@ -54,12 +55,12 @@ module.exports = {
       provider: new LedgerWalletProvider(
         {
           networkId: 1,
-          path: "44'/60'/0'/0/0",
+          path: `44'/60'/${process.env.DEPLOYER_INDEX || 0}'/0/0`,
           askConfirm: true,
           accountsLength: 1,
           accountsOffset: 0
         },
-        `https://mainnet.infura.io/v3/${INFURA_KEY}`
+        `https://mainnet.infura.io/v3/${process.env.INFURA_KEY}`
       ),
       network_id: 1
     },

@@ -1,16 +1,24 @@
 /*
-ERC20 Base Reward Module
+ERC20BaseRewardModule
+
+https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./interfaces/IRewardModule.sol";
 
+/**
+ * @title ERC20 base reward module
+ *
+ * @notice this abstract class implements common ERC20 funding and unlocking
+ * logic, which is inherited by other reward modules.
+ */
 abstract contract ERC20BaseRewardModule is IRewardModule {
     using SafeERC20 for IERC20;
 
@@ -32,7 +40,6 @@ abstract contract ERC20BaseRewardModule is IRewardModule {
     mapping(address => Funding[]) private _fundings;
     mapping(address => uint256) private _shares;
     mapping(address => uint256) private _locked;
-    uint256 public lastUpdated; // child must update this
 
     /**
      * @notice getter for total token shares
@@ -193,28 +200,25 @@ abstract contract ERC20BaseRewardModule is IRewardModule {
     /**
      * @dev unlocks reward tokens based on funding schedules
      * @param token contract addres of reward token
-     * @return number of shares unlocked
+     * @return shares number of shares unlocked
      */
-    function _unlockTokens(address token) internal returns (uint256) {
+    function _unlockTokens(address token) internal returns (uint256 shares) {
         // get unlockable shares for each funding schedule
-        uint256 sharesToUnlock = 0;
         for (uint256 i = 0; i < _fundings[token].length; i++) {
             uint256 s = unlockable(token, i);
             Funding storage funding = _fundings[token][i];
             if (s > 0) {
                 funding.locked -= s;
                 funding.updated = block.timestamp;
-                sharesToUnlock += s;
+                shares += s;
             }
         }
 
         // do unlocking
-        if (sharesToUnlock > 0) {
-            _locked[token] -= sharesToUnlock;
-
-            emit RewardsUnlocked(token, sharesToUnlock);
+        if (shares > 0) {
+            _locked[token] -= shares;
+            emit RewardsUnlocked(token, shares);
         }
-        return sharesToUnlock;
     }
 
     /**
@@ -222,24 +226,24 @@ abstract contract ERC20BaseRewardModule is IRewardModule {
      * @param user address of user receiving rweard
      * @param token contract address of reward token
      * @param shares number of shares to be distributed
+     * @return amount number of reward tokens distributed
      */
     function _distribute(
         address user,
         address token,
         uint256 shares
-    ) internal returns (uint256) {
+    ) internal returns (uint256 amount) {
         // compute reward amount in tokens
         IERC20 rewardToken = IERC20(token);
-        uint256 rewardAmount =
-            (rewardToken.balanceOf(address(this)) * shares) / _shares[token];
+        amount =
+            (rewardToken.balanceOf(address(this)) * shares) /
+            _shares[token];
 
         // update overall reward shares
         _shares[token] -= shares;
 
         // do reward
-        rewardToken.safeTransfer(user, rewardAmount);
-        emit RewardsDistributed(user, token, rewardAmount, shares);
-
-        return rewardAmount;
+        rewardToken.safeTransfer(user, amount);
+        emit RewardsDistributed(user, token, amount, shares);
     }
 }

@@ -1,23 +1,26 @@
 /*
-Math utilities
-
-This library implements various logarithmic math utilies which support
-other contracts and specifically the GYSR multiplier calculation
+MathUtils
 
 https://github.com/gysr-io/core
-
-h/t https://github.com/abdk-consulting/abdk-libraries-solidity
 
 SPDX-License-Identifier: BSD-4-Clause
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
+/**
+ * @title Math utilities
+ *
+ * @notice this library implements various logarithmic math utilies which support
+ * other contracts and specifically the GYSR multiplier calculation
+ *
+ * @dev h/t https://github.com/abdk-consulting/abdk-libraries-solidity
+ */
 library MathUtils {
     /**
-     * Calculate binary logarithm of x.  Revert if x <= 0.
+     * @notice calculate binary logarithm of x
      *
-     * @param x signed 64.64-bit fixed point number
+     * @param x signed 64.64-bit fixed point number, require x > 0
      * @return signed 64.64-bit fixed point number
      */
     function logbase2(int128 x) internal pure returns (int128) {

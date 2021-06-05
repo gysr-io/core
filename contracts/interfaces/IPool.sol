@@ -1,17 +1,17 @@
 /*
-Pool interface
-
-This defines the core Pool contract interface
+IPool
 
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 /**
- * @title IPool interface
+ * @title Pool interface
+ *
+ * @notice this defines the core Pool contract interface
  */
 interface IPool {
     /**

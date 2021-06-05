@@ -1,21 +1,24 @@
 /*
 PoolInfo
 
-This implements the Pool info contract, which provides read-only
-convenience functions to query additional information and metadata
-about the core Pool contract.
-
 https://github.com/gysr-io/core
 
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "../interfaces/IPool.sol";
 import "../interfaces/IStakingModule.sol";
 import "../interfaces/IRewardModule.sol";
 
+/**
+ * @title Pool info library
+ *
+ * @notice this implements the Pool info library, which provides read-only
+ * convenience functions to query additional information and metadata
+ * about the core Pool contract.
+ */
 library PoolInfo {
     /**
      * @notice get information about the underlying staking and reward modules

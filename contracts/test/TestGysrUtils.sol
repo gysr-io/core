@@ -1,13 +1,19 @@
 /*
 Test contract for GYSR utilities
 
+https://github.com/gysr-io/core
+
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "../GysrUtils.sol";
 
+/**
+ * @title Test GYSR utilities
+ * @dev simple wrapper contract to test GYSR library utilities
+ */
 contract TestGysrUtils {
     using GysrUtils for uint256;
 
