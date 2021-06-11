@@ -89,11 +89,10 @@ contract PoolFactory is IPoolFactory, OwnerController {
         Pool pool = new Pool(stakingModule, rewardModule, _gysr, address(this));
 
         // set access
-        pool.transferOwnership(msg.sender);
-        IStakingModule(stakingModule).transferControl(msg.sender);
         IStakingModule(stakingModule).transferOwnership(address(pool));
-        IRewardModule(rewardModule).transferControl(msg.sender);
         IRewardModule(rewardModule).transferOwnership(address(pool));
+        pool.transferControl(msg.sender); // this also sets controller for modules
+        pool.transferOwnership(msg.sender);
 
         // bookkeeping
         map[address(pool)] = true;

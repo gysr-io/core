@@ -49,7 +49,7 @@ npx truffle migrate --network kovan --f 1 --to 1
 Once GYSR token is deployed, define the `GYSR_ADDRESS` variable in your `.env` file.
 
 
-To deploy the Geyser factory contract to Kovan
+To deploy the factory contract to Kovan
 ```
 npx truffle migrate --network kovan --f 2 --to 2
 ```

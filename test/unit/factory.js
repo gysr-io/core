@@ -318,6 +318,10 @@ describe('PoolFactory', function () {
         expect(await this.pool.owner()).to.equal(owner);
       });
 
+      it('should be controlled by creator', async function () {
+        expect(await this.pool.controller()).to.equal(owner);
+      });
+
       it('should set the staking tokens properly', async function () {
         const tokens = await this.pool.stakingTokens();
         expect(tokens.length).to.equal(1);
@@ -374,10 +378,6 @@ describe('PoolFactory', function () {
 
       it('should increase Geyser count', async function () {
         expect(await this.factory.count()).to.be.bignumber.equal(new BN(1));
-      });
-
-      it('should cost less than 5M gas', async function () {
-
       });
 
       it('report gas', async function () {

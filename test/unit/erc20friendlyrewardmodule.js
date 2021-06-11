@@ -25,7 +25,6 @@ const printDebug = (log) => {
 }
 
 const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
-const GeyserToken = contract.fromArtifact('GeyserToken');
 const TestToken = contract.fromArtifact('TestToken');
 const TestElasticToken = contract.fromArtifact('TestElasticToken')
 const TestFeeToken = contract.fromArtifact('TestFeeToken');
@@ -37,10 +36,9 @@ const BONUS_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
 
 
 describe('ERC20FriendlyRewardModule', function () {
-  const [org, owner, controller, bob, alice, factory] = accounts;
+  const [org, owner, bob, alice, factory, other] = accounts;
 
   beforeEach('setup', async function () {
-    this.gysr = await GeyserToken.new({ from: org });
     this.token = await TestToken.new({ from: org });
     this.elastic = await TestElasticToken.new({ from: org });
     this.feeToken = await TestFeeToken.new({ from: org });
@@ -1162,4 +1160,218 @@ describe('ERC20FriendlyRewardModule', function () {
       });
     });
   });
+
+
+  describe('user and account differ', function () {
+
+    beforeEach('setup', async function () {
+
+      // owner creates module
+      this.module = await ERC20FriendlyRewardModule.new(
+        this.token.address,
+        bonus(0.0),
+        days(40),
+        factory,
+        { from: owner }
+      );
+
+      // owner funds module
+      await this.token.transfer(owner, tokens(10000), { from: org });
+      await this.token.approve(this.module.address, tokens(100000), { from: owner });
+      await this.module.methods['fund(uint256,uint256)'](
+        tokens(1000), days(200),
+        { from: owner }
+      );
+      this.t0 = await this.module.lastUpdated();
+
+      // alice stakes 100 tokens w/ 10 GYSR at 10 days, under account address
+      await time.increaseTo(this.t0.add(days(10)));
+      const data0 = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+      this.res0 = await this.module.stake(other, alice, shares(100), data0, { from: owner });
+
+      // bob stakes 100 tokens w/ 5 GYSR at 40 days
+      const data1 = web3.eth.abi.encodeParameter('uint256', tokens(5).toString());
+      await time.increaseTo(this.t0.add(days(40)));
+      await this.module.stake(bob, bob, shares(100), data1, { from: owner });
+
+      // alice stakes another 100 tokens at 80 days
+      await time.increaseTo(this.t0.add(days(80)));
+      await this.module.stake(other, alice, shares(100), [], { from: owner });
+
+      // advance last 20 days (below)
+
+      // days 0-40
+      // 200 rewards unlocked
+      // alice: 100 staked w/ 10 GYSR
+      this.aliceRewardTotal = 200;
+      this.mult0 = 1.0 + Math.log10(1.0 + 0.01 * 10.0 / (0.01 + 0.0));
+      const usage0 = (this.mult0 - 1.0) / this.mult0;
+
+      // days 40-80
+      // 200 reards unlocked
+      // alice 100 staked w/ 10 GYSR
+      // bob 100 staked w/ 5 GYSR
+      this.mult1 = 1.0 + Math.log10(1.0 + (0.01 * 200.0 / 100.0) * 5.0 / (0.01 + usage0));
+      this.aliceRewardTotal += 200 * this.mult0 * 100 / (this.mult0 * 100 + this.mult1 * 100);
+      this.bobRewardTotal = 200 * this.mult1 * 100 / (this.mult0 * 100 + this.mult1 * 100);
+
+      // days 80-100
+      // 100 rewards unlocked
+      // alice 200 staked (100 w/ 10 GYSR @ 100% vest, 100 @ 50% vest)
+      // bob 100 staked w/ 5 GYSR
+      this.alicePenalty = 100 * 0.5 * 100 / (100 + this.mult0 * 100 + this.mult1 * 100);
+      this.aliceRewardTotal += 100 * (this.mult0 * 100 + 0.5 * 100) / (100 + this.mult0 * 100 + this.mult1 * 100);
+      this.bobRewardTotal += 100 * this.mult1 * 100 / (100 + this.mult0 * 100 + this.mult1 * 100);
+    });
+
+    describe('when user and account differ', function () {
+
+      it('should have two stakes for account', async function () {
+        expect(await this.module.stakeCount(other)).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should have no stakes for user', async function () {
+        expect(await this.module.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should have GYSR applied to first stake for account', async function () {
+        expect((await this.module.stakes(other, 0)).gysr).to.be.bignumber.equal(tokens(10));
+      });
+
+      it('should have multiplier applied to first stake for account', async function () {
+        expect((await this.module.stakes(other, 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
+      });
+
+    });
+
+    describe('when user is passed as account', function () {
+
+      it('should revert', async function () {
+        await expectRevert(
+          this.module.unstake(alice, alice, shares(200), [], { from: owner }),
+          'revert'  // insufficient balance, this would be caught upstream
+        )
+      });
+    });
+
+    describe('when user unstakes all shares against account', function () {
+
+      beforeEach(async function () {
+        // advance last 20 days
+        await time.increaseTo(this.t0.add(days(100)));
+
+        // unstake
+        this.res = await this.module.unstake(other, alice, shares(200), [], { from: owner });
+      });
+
+      it('should have no remaining stakes for account', async function () {
+        expect(await this.module.stakeCount(other)).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should disburse expected amount of reward token to user', async function () {
+        expect(await this.token.balanceOf(alice)).to.be.bignumber.closeTo(
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
+        );
+      });
+
+      it('should reduce amount of reward token in unlocked pool', async function () {
+        expect(await this.module.totalUnlocked()).to.be.bignumber.closeTo(
+          tokens(500 - this.aliceRewardTotal), TOKEN_DELTA
+        );
+      });
+
+      it('should leave unvested rewards as dust', async function () {
+        expect(await this.module.rewardDust()).to.be.bignumber.closeTo(shares(this.alicePenalty), TOKEN_DELTA);
+      });
+
+      it('should emit GysrSpent event for user during stake', async function () {
+        expectEvent(
+          this.res0,
+          'GysrSpent',
+          { user: alice, amount: tokens(10) }
+        );
+      });
+
+      it('should emit GysrVested event for user during unstake', async function () {
+        expectEvent(
+          this.res,
+          'GysrVested',
+          { user: alice, amount: tokens(10) }
+        );
+      });
+
+      it('should emit reward event for user', async function () {
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.token).eq(this.token.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
+      });
+    });
+
+    describe('when another user unstakes against transferred account position', function () {
+
+      beforeEach(async function () {
+        // advance last 20 days
+        await time.increaseTo(this.t0.add(days(100)));
+
+        // unstake
+        this.res = await this.module.unstake(other, bob, shares(200), [], { from: owner });
+      });
+
+      it('should have no remaining stakes for account', async function () {
+        expect(await this.module.stakeCount(other)).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should not affect other positions of new user', async function () {
+        expect(await this.module.stakeCount(bob)).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should disburse expected amount of reward token to new user', async function () {
+        expect(await this.token.balanceOf(bob)).to.be.bignumber.closeTo(
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
+        );
+      });
+
+      it('should not disburse any reward token to original user', async function () {
+        expect(await this.token.balanceOf(alice)).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should reduce amount of reward token in unlocked pool', async function () {
+        expect(await this.module.totalUnlocked()).to.be.bignumber.closeTo(
+          tokens(500 - this.aliceRewardTotal), TOKEN_DELTA
+        );
+      });
+
+      it('should leave unvested rewards as dust', async function () {
+        expect(await this.module.rewardDust()).to.be.bignumber.closeTo(shares(this.alicePenalty), TOKEN_DELTA);
+      });
+
+      it('should emit GysrSpent event for original user during stake', async function () {
+        expectEvent(
+          this.res0,
+          'GysrSpent',
+          { user: alice, amount: tokens(10) }
+        );
+      });
+
+      it('should emit GysrVested event for new user during unstake', async function () {
+        expectEvent(
+          this.res,
+          'GysrVested',
+          { user: bob, amount: tokens(10) }
+        );
+      });
+
+      it('should emit reward event for new user', async function () {
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(bob);
+        expect(e.args.token).eq(this.token.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
+      });
+    });
+
+  });
+
 });

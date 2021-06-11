@@ -18,6 +18,7 @@ const PoolFactory = contract.fromArtifact('PoolFactory');
 const GeyserToken = contract.fromArtifact('GeyserToken');
 const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
 const ERC20CompetitiveRewardModule = contract.fromArtifact('ERC20CompetitiveRewardModule');
+const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
 const TestReentrantToken = contract.fromArtifact('TestReentrantToken');
@@ -239,130 +240,275 @@ describe('Pool', function () {
 
   describe('withdraw', function () {
 
-    beforeEach(async function () {
-      // staking module
-      this.staking = await ERC20StakingModule.new(
-        this.stk.address,
-        stakingModuleFactory,
-        { from: owner }
-      );
-      // reward module
-      this.reward = await ERC20CompetitiveRewardModule.new(
-        this.rew.address,
-        bonus(0.5),
-        bonus(2.0),
-        days(90),
-        rewardModuleFactory,
-        { from: owner }
-      );
-      // create pool
-      this.pool = await Pool.new(
-        this.staking.address,
-        this.reward.address,
-        this.gysr.address,
-        this.factory.address,
-        { from: owner }
-      );
-      await this.staking.transferOwnership(this.pool.address, { from: owner });
-      await this.reward.transferOwnership(this.pool.address, { from: owner });
-
-      // owner funds pool
-      await this.rew.transfer(owner, tokens(10000), { from: org });
-      await this.rew.approve(this.reward.address, tokens(100000), { from: owner });
-      await this.reward.methods['fund(uint256,uint256)'](tokens(1000), days(180), { from: owner });
-
-      // alice stakes 100 tokens
-      await this.stk.transfer(alice, tokens(1000), { from: org });
-      await this.stk.approve(this.staking.address, tokens(10000), { from: alice });
-      await this.pool.stake(tokens(100), [], [], { from: alice });
-
-      // alice acquires GYSR
-      await this.gysr.transfer(alice, tokens(100), { from: org });
-      await this.gysr.approve(this.pool.address, tokens(10000), { from: alice });
-
-      // time elapsed
-      await time.increase(days(30));
-    });
-
-    describe('when GYSR balance is zero', function () {
-      it('should fail', async function () {
-        await expectRevert(
-          this.pool.withdraw(tokens(10), { from: owner }),
-          'p2' // Pool: withdraw amount exceeds vested balance
-        );
-      });
-    });
-
-    describe('when withdraw amount is zero', function () {
-      it('should fail', async function () {
-        await expectRevert(
-          this.pool.withdraw(tokens(0), { from: owner }),
-          'p1' //Pool: withdraw amount is zero
-        );
-      });
-    });
-
-    describe('when amount is greater than GYSR balance', function () {
-      it('should fail', async function () {
-        // alice spends 10 GYSR on unstaking operation
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
-        await this.pool.methods['unstake(uint256,bytes,bytes)'](
-          tokens(100), [], data, { from: alice }
-        );
-        // only 8 GYSR available for withdraw after fee
-        await expectRevert(
-          this.pool.withdraw(tokens(9), { from: owner }),
-          'p2' // Pool: withdraw amount exceeds vested balance
-        );
-      });
-    });
-
-    describe('when sender is not controller', function () {
-      it('should fail', async function () {
-        // alice spends 10 GYSR on unstaking operation
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
-        await this.pool.methods['unstake(uint256,bytes,bytes)'](
-          tokens(100), [], data, { from: alice }
-        );
-        await expectRevert(
-          this.pool.withdraw(tokens(8), { from: alice }),
-          'oc2' // OwnerController: caller is not the controller
-        );
-      });
-    });
-
-    describe('when withdraw is successful', function () {
+    describe('when GYSR is spent during unstake', function () {
 
       beforeEach(async function () {
-        // alice spends 10 GYSR on unstaking operation
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
-        await this.pool.methods['unstake(uint256,bytes,bytes)'](
-          tokens(100), [], data, { from: alice }
+        // staking module
+        this.staking = await ERC20StakingModule.new(
+          this.stk.address,
+          stakingModuleFactory,
+          { from: owner }
         );
-        // 8 GYSR available for withdraw after treasury fee
-        this.res = await this.pool.withdraw(tokens(8), { from: owner });
+        // reward module
+        this.reward = await ERC20CompetitiveRewardModule.new(
+          this.rew.address,
+          bonus(0.5),
+          bonus(2.0),
+          days(90),
+          rewardModuleFactory,
+          { from: owner }
+        );
+        // create pool
+        this.pool = await Pool.new(
+          this.staking.address,
+          this.reward.address,
+          this.gysr.address,
+          this.factory.address,
+          { from: owner }
+        );
+        await this.staking.transferOwnership(this.pool.address, { from: owner });
+        await this.reward.transferOwnership(this.pool.address, { from: owner });
+
+        // owner funds pool
+        await this.rew.transfer(owner, tokens(10000), { from: org });
+        await this.rew.approve(this.reward.address, tokens(100000), { from: owner });
+        await this.reward.methods['fund(uint256,uint256)'](tokens(1000), days(180), { from: owner });
+
+        // alice stakes 100 tokens
+        await this.stk.transfer(alice, tokens(1000), { from: org });
+        await this.stk.approve(this.staking.address, tokens(10000), { from: alice });
+        await this.pool.stake(tokens(100), [], [], { from: alice });
+
+        // alice acquires GYSR
+        await this.gysr.transfer(alice, tokens(100), { from: org });
+        await this.gysr.approve(this.pool.address, tokens(10000), { from: alice });
+
+        // time elapsed
+        await time.increase(days(30));
       });
 
-      it('should increase GYSR token balance for owner', async function () {
-        expect(await this.gysr.balanceOf(owner)).to.be.bignumber.equal(tokens(8));
+      describe('when GYSR balance is zero', function () {
+        it('should fail', async function () {
+          await expectRevert(
+            this.pool.withdraw(tokens(10), { from: owner }),
+            'p2' // Pool: withdraw amount exceeds vested balance
+          );
+        });
       });
 
-      it('should decrease GYSR token balance for Pool contract', async function () {
-        expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.equal(tokens(0));
+      describe('when withdraw amount is zero', function () {
+        it('should fail', async function () {
+          await expectRevert(
+            this.pool.withdraw(tokens(0), { from: owner }),
+            'p1' //Pool: withdraw amount is zero
+          );
+        });
       });
 
-      it('should leave GYSR fee in treasury', async function () {
-        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(2));
+      describe('when amount is greater than GYSR balance', function () {
+        it('should fail', async function () {
+          // alice spends 10 GYSR on unstaking operation
+          const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+          await this.pool.unstake(tokens(100), [], data, { from: alice });
+          // only 8 GYSR available for withdraw after fee
+          await expectRevert(
+            this.pool.withdraw(tokens(9), { from: owner }),
+            'p2' // Pool: withdraw amount exceeds vested balance
+          );
+        });
       });
 
-      it('should emit GYSR withdrawn event', async function () {
-        expectEvent(this.res, 'GysrWithdrawn', { amount: tokens(8) });
+      describe('when sender is not controller', function () {
+        it('should fail', async function () {
+          // alice spends 10 GYSR on unstaking operation
+          const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+          await this.pool.unstake(tokens(100), [], data, { from: alice });
+          await expectRevert(
+            this.pool.withdraw(tokens(8), { from: alice }),
+            'oc2' // OwnerController: caller is not the controller
+          );
+        });
       });
 
-      it('report gas', async function () {
-        reportGas('Pool', 'withdraw', '', this.res)
+      describe('when withdraw is successful', function () {
+
+        beforeEach(async function () {
+          // alice spends 10 GYSR on unstaking operation
+          const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+          await this.pool.unstake(tokens(100), [], data, { from: alice });
+          // 8 GYSR available for withdraw after treasury fee
+          this.res = await this.pool.withdraw(tokens(8), { from: owner });
+        });
+
+        it('should increase GYSR token balance for owner', async function () {
+          expect(await this.gysr.balanceOf(owner)).to.be.bignumber.equal(tokens(8));
+        });
+
+        it('should decrease GYSR token balance for Pool contract', async function () {
+          expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.equal(tokens(0));
+        });
+
+        it('should decrease vested GYSR balance', async function () {
+          expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0));
+        });
+
+        it('should leave GYSR fee in treasury', async function () {
+          expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(2));
+        });
+
+        it('should emit GYSR withdrawn event', async function () {
+          expectEvent(this.res, 'GysrWithdrawn', { amount: tokens(8) });
+        });
+
+        it('report gas', async function () {
+          reportGas('Pool', 'withdraw', '', this.res)
+        });
       });
     });
+
+
+    describe('when GYSR is spent during stake', function () {
+
+      beforeEach(async function () {
+        // staking module
+        this.staking = await ERC20StakingModule.new(
+          this.stk.address,
+          stakingModuleFactory,
+          { from: owner }
+        );
+        // reward module
+        this.reward = await ERC20FriendlyRewardModule.new(
+          this.rew.address,
+          bonus(0.0),
+          days(60),
+          rewardModuleFactory,
+          { from: owner }
+        );
+        // create pool
+        this.pool = await Pool.new(
+          this.staking.address,
+          this.reward.address,
+          this.gysr.address,
+          this.factory.address,
+          { from: owner }
+        );
+        await this.staking.transferOwnership(this.pool.address, { from: owner });
+        await this.reward.transferOwnership(this.pool.address, { from: owner });
+
+        // owner funds pool
+        await this.rew.transfer(owner, tokens(10000), { from: org });
+        await this.rew.approve(this.reward.address, tokens(100000), { from: owner });
+        await this.reward.methods['fund(uint256,uint256)'](tokens(1000), days(180), { from: owner });
+
+        // alice acquires staking tokens and GYSR token
+        await this.stk.transfer(alice, tokens(1000), { from: org });
+        await this.stk.approve(this.staking.address, tokens(10000), { from: alice });
+        await this.gysr.transfer(alice, tokens(100), { from: org });
+        await this.gysr.approve(this.pool.address, tokens(10000), { from: alice });
+
+        // alice stakes 100 tokens w/ 10 GYSR
+        const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+        this.res = await this.pool.stake(tokens(100), [], data, { from: alice });
+
+        // time elapsed
+        await time.increase(days(30));
+      });
+
+      describe('when user has staked with GYSR', function () {
+
+        it('should decrease GYSR token balance for user', async function () {
+          expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(90));
+        });
+
+        it('should increase GYSR token balance for Pool contract', async function () {
+          expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.equal(tokens(10));
+        });
+
+        it('should still have zero vested GYSR balance', async function () {
+          expect(await this.pool.gysrBalance()).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should not send GYSR fee to treasury yet', async function () {
+          expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should emit GYSRSpent event', async function () {
+          expectEvent(this.res, 'GysrSpent', { amount: tokens(10) });
+        });
+
+      });
+
+      describe('when withdraw amount is zero', function () {
+        it('should fail', async function () {
+          await expectRevert(
+            this.pool.withdraw(tokens(0), { from: owner }),
+            'p1' //Pool: withdraw amount is zero
+          );
+        });
+      });
+
+      describe('when GYSR balance has not vested', function () {
+        it('should fail', async function () {
+          await expectRevert(
+            this.pool.withdraw(tokens(8), { from: owner }),
+            'p2' // Pool: withdraw amount exceeds vested balance
+          );
+        });
+      });
+
+      describe('when amount is greater than GYSR balance', function () {
+        it('should fail', async function () {
+          await this.pool.unstake(tokens(100), [], [], { from: alice });
+          // only 8 GYSR available for withdraw after fee
+          await expectRevert(
+            this.pool.withdraw(tokens(9), { from: owner }),
+            'p2' // Pool: withdraw amount exceeds vested balance
+          );
+        });
+      });
+
+      describe('when sender is not controller', function () {
+        it('should fail', async function () {
+          await this.pool.unstake(tokens(100), [], [], { from: alice });
+          await expectRevert(
+            this.pool.withdraw(tokens(8), { from: alice }),
+            'oc2' // OwnerController: caller is not the controller
+          );
+        });
+      });
+
+      describe('when withdraw is successful', function () {
+
+        beforeEach(async function () {
+          // 10 GYSR vested from unstaking operation
+          await this.pool.unstake(tokens(100), [], [], { from: alice });
+          // 8 GYSR available for withdraw after treasury fee
+          this.res = await this.pool.withdraw(tokens(8), { from: owner });
+        });
+
+        it('should increase GYSR token balance for owner', async function () {
+          expect(await this.gysr.balanceOf(owner)).to.be.bignumber.equal(tokens(8));
+        });
+
+        it('should decrease GYSR token balance for Pool contract', async function () {
+          expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.equal(tokens(0));
+        });
+
+        it('should decrease vested GYSR balance', async function () {
+          expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0));
+        });
+
+        it('should leave GYSR fee in treasury', async function () {
+          expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(2));
+        });
+
+        it('should emit GYSR withdrawn event', async function () {
+          expectEvent(this.res, 'GysrWithdrawn', { amount: tokens(8) });
+        });
+
+      });
+    });
+
   });
 
 

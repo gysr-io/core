@@ -1,5 +1,5 @@
-// integrations tests for "Geyser" Pool
-// made up of ERC20StakingModule and ERC20CompetitiveRewardModule
+// integrations tests for "Fountain" Pool
+// made up of ERC20StakingModule and ERC20FriendlyRewardModule
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
 const { BN, time, expectEvent, expectRevert, constants, singletons } = require('@openzeppelin/test-helpers');
@@ -21,8 +21,8 @@ const PoolFactory = contract.fromArtifact('PoolFactory');
 const GeyserToken = contract.fromArtifact('GeyserToken');
 const ERC20StakingModuleFactory = contract.fromArtifact('ERC20StakingModuleFactory');
 const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
-const ERC20CompetitiveRewardModuleFactory = contract.fromArtifact('ERC20CompetitiveRewardModuleFactory');
-const ERC20CompetitiveRewardModule = contract.fromArtifact('ERC20CompetitiveRewardModule');
+const ERC20FriendlyRewardModuleFactory = contract.fromArtifact('ERC20FriendlyRewardModuleFactory');
+const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
 
@@ -32,7 +32,7 @@ const SHARE_DELTA = toFixedPointBigNumber(0.0001 * (10 ** 6), 10, DECIMALS);
 const BONUS_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
 
 
-describe('Geyser integration', function () {
+describe('Fountain integration', function () {
   const [owner, org, treasury, alice, bob, other] = accounts;
 
   beforeEach('setup', async function () {
@@ -40,15 +40,15 @@ describe('Geyser integration', function () {
     this.gysr = await GeyserToken.new({ from: org });
     this.factory = await PoolFactory.new(this.gysr.address, treasury, { from: org });
     this.stakingModuleFactory = await ERC20StakingModuleFactory.new({ from: org });
-    this.rewardModuleFactory = await ERC20CompetitiveRewardModuleFactory.new({ from: org });
+    this.rewardModuleFactory = await ERC20FriendlyRewardModuleFactory.new({ from: org });
     this.stk = await TestLiquidityToken.new({ from: org });
     this.rew = await TestToken.new({ from: org });
 
     // encode sub factory arguments
     const stakingdata = web3.eth.abi.encodeParameter('address', this.stk.address);
     const rewarddata = web3.eth.abi.encodeParameters(
-      ['address', 'uint256', 'uint256', 'uint256'],
-      [this.rew.address, bonus(0.5).toString(), bonus(2.0).toString(), days(90).toString()]
+      ['address', 'uint256', 'uint256'],
+      [this.rew.address, bonus(0.0).toString(), days(80).toString()]
     );
 
     // whitelist sub factories
@@ -68,7 +68,7 @@ describe('Geyser integration', function () {
 
     // get references to submodules
     this.staking = await ERC20StakingModule.at(await this.pool.stakingModule());
-    this.reward = await ERC20CompetitiveRewardModule.at(await this.pool.rewardModule());
+    this.reward = await ERC20FriendlyRewardModule.at(await this.pool.rewardModule());
 
     // owner funds pool
     await this.rew.transfer(owner, tokens(10000), { from: org });
@@ -145,6 +145,10 @@ describe('Geyser integration', function () {
         expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(100));
       });
 
+      it('should record that 0 GYSR was spent', async function () {
+        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(0))
+      })
+
       it('should emit Staked event', async function () {
         expectEvent(
           this.res,
@@ -154,7 +158,7 @@ describe('Geyser integration', function () {
       });
 
       it('report gas', async function () {
-        reportGas('Pool', 'stake', 'geyser', this.res)
+        reportGas('Pool', 'stake', 'fountain', this.res)
       });
     });
 
@@ -197,6 +201,15 @@ describe('Geyser integration', function () {
         expect(await this.staking.totalShares()).to.be.bignumber.equal(shares(600));
       });
 
+      it('should record that 0 GYSR was spent', async function () {
+        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(0))
+        expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(0))
+      })
+
+      it('should not change the pool\'s GYSR balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0))
+      })
+
       it('should emit each Staked event', async function () {
         expectEvent(
           this.res0,
@@ -210,6 +223,169 @@ describe('Geyser integration', function () {
         );
       });
     });
+
+    describe('when GYSR is spent by two users during stake', function () {
+
+      beforeEach('alice and bob stake', async function () {
+        await this.stk.transfer(alice, tokens(1000), { from: org });
+        await this.stk.transfer(bob, tokens(1000), { from: org });
+        await this.stk.approve(this.staking.address, tokens(100000), { from: alice });
+        await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+        await this.gysr.transfer(alice, tokens(10), { from: org });
+        await this.gysr.transfer(bob, tokens(10), { from: org });
+        await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
+        await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
+        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
+        this.res0 = await this.pool.stake(tokens(100), [], data, { from: alice });
+        this.res1 = await this.pool.stake(tokens(500), [], data, { from: bob });
+      });
+
+      it('should decrease each user staking token balance', async function () {
+        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(900));
+        expect(await this.stk.balanceOf(bob)).to.be.bignumber.equal(tokens(500));
+      });
+
+      it('should increase token balance of staking module', async function () {
+        expect(await this.stk.balanceOf(this.staking.address)).to.be.bignumber.equal(tokens(600));
+      });
+
+      it('should increase total staking balances', async function () {
+        expect((await this.pool.stakingTotals())[0]).to.be.bignumber.equal(tokens(600));
+      });
+
+      it('should update staking balances for each user', async function () {
+        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(100));
+        expect((await this.pool.stakingBalances(bob))[0]).to.be.bignumber.equal(tokens(500));
+      });
+
+      it('should update the total staked shares for each user', async function () {
+        expect(await this.staking.shares(alice)).to.be.bignumber.equal(shares(100));
+        expect(await this.staking.shares(bob)).to.be.bignumber.equal(shares(500));
+      });
+
+      it('should combine to increase the total staking shares', async function () {
+        expect(await this.staking.totalShares()).to.be.bignumber.equal(shares(600));
+      });
+
+      it('should emit each Staked event', async function () {
+        expectEvent(
+          this.res0,
+          'Staked',
+          { user: alice, token: this.stk.address, amount: tokens(100), shares: shares(100) }
+        );
+        expectEvent(
+          this.res1,
+          'Staked',
+          { user: bob, token: this.stk.address, amount: tokens(500), shares: shares(500) }
+        );
+      });
+
+      it('should record that 1 GYSR was spent each', async function () {
+        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(1))
+        expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(1))
+      })
+
+      it('should decrease each users GYSR balance', async function() {
+        expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9));
+        expect(await this.gysr.balanceOf(bob)).to.be.bignumber.equal(tokens(9));
+      })
+
+      it('should not change the pool\'s GYSR balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0))
+      })
+
+      it('should emit GysrSpent event', async function () {
+        expectEvent(
+          this.res0,
+          'GysrSpent',
+          { user: alice, amount: tokens(1) }
+        );
+        expectEvent(
+          this.res1,
+          'GysrSpent',
+          { user: bob, amount: tokens(1) }
+        );
+      })
+    });
+
+    describe('when GYSR is spent by one user during stake', function () {
+
+      beforeEach('alice and bob stake', async function () {
+        await this.stk.transfer(alice, tokens(1000), { from: org });
+        await this.stk.transfer(bob, tokens(1000), { from: org });
+        await this.stk.approve(this.staking.address, tokens(100000), { from: alice });
+        await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+        await this.gysr.transfer(alice, tokens(10), { from: org });
+        await this.gysr.transfer(bob, tokens(10), { from: org });
+        await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
+        await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
+        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
+        this.res0 = await this.pool.stake(tokens(100), [], data, { from: alice });
+        this.res1 = await this.pool.stake(tokens(500), [], [], { from: bob });
+      });
+
+      it('should decrease each user staking token balance', async function () {
+        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(900));
+        expect(await this.stk.balanceOf(bob)).to.be.bignumber.equal(tokens(500));
+      });
+
+      it('should increase token balance of staking module', async function () {
+        expect(await this.stk.balanceOf(this.staking.address)).to.be.bignumber.equal(tokens(600));
+      });
+
+      it('should increase total staking balances', async function () {
+        expect((await this.pool.stakingTotals())[0]).to.be.bignumber.equal(tokens(600));
+      });
+
+      it('should update staking balances for each user', async function () {
+        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(100));
+        expect((await this.pool.stakingBalances(bob))[0]).to.be.bignumber.equal(tokens(500));
+      });
+
+      it('should update the total staked shares for each user', async function () {
+        expect(await this.staking.shares(alice)).to.be.bignumber.equal(shares(100));
+        expect(await this.staking.shares(bob)).to.be.bignumber.equal(shares(500));
+      });
+
+      it('should combine to increase the total staking shares', async function () {
+        expect(await this.staking.totalShares()).to.be.bignumber.equal(shares(600));
+      });
+
+      it('should record that the correct amount of GYSR was spent', async function () {
+        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(1))
+        expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(0))
+      })
+
+      it('should not change the pool\'s GYSR balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0))
+      })
+
+      it('should emit each Staked event', async function () {
+        expectEvent(
+          this.res0,
+          'Staked',
+          { user: alice, token: this.stk.address, amount: tokens(100), shares: shares(100) }
+        );
+        expectEvent(
+          this.res1,
+          'Staked',
+          { user: bob, token: this.stk.address, amount: tokens(500), shares: shares(500) }
+        );
+      });
+
+      it('should decrease one users GYSR balance', async function() {
+        expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9));
+        expect(await this.gysr.balanceOf(bob)).to.be.bignumber.equal(tokens(10));
+      })
+
+      it('should emit GysrSpent event', async function () {
+        expectEvent(
+          this.res0,
+          'GysrSpent',
+          { user: alice, amount: tokens(1) }
+        );
+      })
+    });
   });
 
 
@@ -221,28 +397,34 @@ describe('Geyser integration', function () {
       await this.stk.transfer(bob, tokens(1000), { from: org });
       await this.stk.approve(this.staking.address, tokens(100000), { from: alice });
       await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+      await this.gysr.transfer(alice, tokens(10), { from: org });
+      await this.gysr.transfer(bob, tokens(10), { from: org });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
 
-      // alice stakes 100 tokens at 10 days
+      this.t0 = await this.reward.lastUpdated();
+
+      const gysr = 0.01 // reduced because of proportion to total staked
+      const r = 0.01 // ratio is 0
+      const x = 1 + gysr / r
+      this.mult = 1 + Math.log10(x) // 1.3010299956639813
+
+      // alice stakes 100 tokens at 10 days with a 1.3x multiplier
       await time.increaseTo(this.t0.add(days(10)));
-      await this.pool.stake(tokens(100), [], [], { from: alice });
+      const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
+      await this.pool.stake(tokens(100), [], data, { from: alice });
+      this.t1 = await this.reward.lastUpdated();
 
       // bob stakes 100 tokens at 40 days
       await time.increaseTo(this.t0.add(days(40)));
       await this.pool.stake(tokens(100), [], [], { from: bob });
 
-      // alice stakes another 100 tokens at 70 days
-      await time.increaseTo(this.t0.add(days(70)));
+      // alice stakes another 100 tokens at 80 days
+      await time.increaseTo(this.t0.add(days(80)));
       await this.pool.stake(tokens(100), [], [], { from: alice });
 
-      // advance last 30 days (below)
-
-      // summary
-      // 100 days elapsed
-      // tokens unlocked: 500 (1000 @ 200 days)
-      // time bonus: 0.5 -> 2.0 over 90 days
-      // alice: 100 staked for 90 days, 100 staked for 30 days, 12000 staking days
-      // bob: 100 staked for 60 days, 6000 staking days
-      // total: 18000 share days
+      // advance last 20 days
+      await time.increaseTo(this.t0.add(days(100)));
     });
 
     describe('when unstake amount is zero', function () {
@@ -265,14 +447,21 @@ describe('Geyser integration', function () {
 
     describe('when one user unstakes all shares', function () {
       beforeEach(async function () {
-        // expect 3.0 multiplier on first stake, and 2.0 multiplier on second stake
-        const inflated = 100 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion = inflated / (18000 - 12000 + inflated);
+        // DAYS 0 - 40
+        this.aliceRewardTotal = 1000 / 5 // 1/5th of time elapsed
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 40 - 80
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult) / (100 * this.mult + 100)
+        this.bobRewardTotal = 1000 / 5 * 100 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
+        this.bobRewardUnpenalized = 1000 / 5 * 100 / (100 * this.mult + 100)
 
-        // do unstake
+        // DAYS 80 - 100
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
+        this.bobRewardTotal += 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
+        this.bobRewardUnpenalized += 1000 / 10 * 100 / (100 * this.mult + 200)
+
         this.res = await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
@@ -286,18 +475,14 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion * 500), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion) * 500), TOKEN_DELTA
+          tokens(this.bobRewardUnpenalized + this.aliceRedistributed), TOKEN_DELTA
         );
-      });
-
-      it('should not increase pool GYSR usage', async function () {
-        expect(await this.pool.usage()).to.be.bignumber.equal(new BN(0));
       });
 
       it('should emit Unstaked event', async function () {
@@ -312,32 +497,47 @@ describe('Geyser integration', function () {
         const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 500), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion * 500), SHARE_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
       });
 
       it('should have no remaining stakes for user', async function () {
         expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
       });
 
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res,
+          'GysrVested',
+          { user: alice, amount: tokens(1) }
+        );
+      });
+
       it('report gas', async function () {
-        reportGas('Pool', 'unstake', 'geyser', this.res)
+        reportGas('Pool', 'unstake', 'fountain', this.res)
       });
     });
 
     describe('when one user unstakes some shares', function () {
       beforeEach(async function () {
-        // first-in last-out
-        // expect 50% of first stake to be returned at a 3.0 multiplier
-        // expect full second stake to be returned at a 2.0 multiplier
-        const raw = 50 * 90 + 100 * 30;
-        const inflated = 50 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion = inflated / (18000 - raw + inflated);
+        // DAYS 0 - 40
+        this.aliceRewardTotal = 1000 / 5 * .5 // 1/5th of time elapsed
+        this.aliceRewardUntouched = 1000 / 5 * .5
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 40 - 80
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100)
+        this.aliceRewardUntouched += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100)
+        this.bobRewardTotal = 1000 / 5 * 100 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
+        this.bobRewardUnpenalized = 1000 / 5 * 100 / (100 * this.mult + 100)
 
-        // do unstake
+        // DAYS 80 - 100
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardUntouched += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200)
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
+        this.bobRewardTotal += 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
+        this.bobRewardUnpenalized += 1000 / 10 * 100 / (100 * this.mult + 200)
+
         this.res = await this.pool.unstake(tokens(150), [], [], { from: alice });
       });
 
@@ -351,13 +551,13 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion * 500), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion) * 500), TOKEN_DELTA
+          tokens(this.bobRewardUnpenalized + this.aliceRedistributed + this.aliceRewardUntouched), TOKEN_DELTA
         );
       });
 
@@ -373,8 +573,8 @@ describe('Geyser integration', function () {
         const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 500), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion * 500), SHARE_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
       });
 
       it('should have one remaining stake for user', async function () {
@@ -385,33 +585,52 @@ describe('Geyser integration', function () {
         const stake = await this.reward.stakes(alice, 0);
         expect(stake.timestamp).to.be.bignumber.closeTo(this.t0.add(days(10)), new BN(1));
       });
+
+      it('should leave dust', async function () {
+        expect(await this.reward.rewardDust()).to.be.bignumber.closeTo(shares(this.aliceRedistributed), SHARE_DELTA);
+      })
     });
 
     describe('when one user unstakes multiple times', function () {
       beforeEach(async function () {
-        // first unstake
-        // expect 50% of first stake to be returned at a 3.0 multiplier
-        // expect full second stake to be returned at a 2.0 multiplier
-        const raw0 = 50 * 90 + 100 * 30;
-        const inflated0 = 50 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion0 = inflated0 / (18000 - raw0 + inflated0);
+        // DAYS 0 - 40
+        this.rewardsPerStakedShare1 = 200 / (100 * this.mult)
+        this.aliceRewardTotal = 1000 / 5 * .5 // 1/5th of time elapsed
+        // DAYS 40 - 80
+        this.rewardsPerStakedShare2 = this.rewardsPerStakedShare1 + 200 / (100 * this.mult + 100)
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100) // 1/5th of time elapsed
 
-        // second unstake
-        // expect 3.0 multiplier on last 50% of first stake
-        const raw1 = 50 * 90;
-        const inflated1 = raw1 * 3.0;
-        this.portion1 = inflated1 / (18000 - raw0 - raw1 + inflated1);
+        this.bobRewardTotal = 1000 / 5 * 100 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
+        this.bobRewardUnpenalized = 1000 / 5 * 100 / (100 * this.mult + 100)
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 80 - 100
+        this.rewardsPerStakedShare3 = this.rewardsPerStakedShare2 + 100 / (100 * this.mult + 200)
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
 
+        this.bobRewardTotal += 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
+        this.bobRewardUnpenalized += 1000 / 10 * 100 / (100 * this.mult + 200)
+
+        this.aliceFirstReward = this.aliceRewardTotal
+
+        // Alice unstakes 150
+        this.rewardsPerStakedShare4 = this.rewardsPerStakedShare3 + this.aliceRedistributed / (50 * this.mult + 100)
+
+        this.aliceSecondReward = this.rewardsPerStakedShare4 * 50 * this.mult
+        this.bobRewardUnpenalized += this.rewardsPerStakedShare4 * 100
+
+        this.aliceRewardTotal += this.aliceSecondReward
         // do first unstake
-        await this.pool.unstake(tokens(150), [], [], { from: alice });
-        this.remainder = fromFixedPointBigNumber(await this.reward.totalUnlocked(), 10, DECIMALS);
+        this.res0 = await this.pool.unstake(tokens(150), [], [], { from: alice });
 
         // do second unstake
-        this.res = await this.pool.unstake(tokens(50), [], [], { from: alice });
+        this.res1 = await this.pool.unstake(tokens(50), [], [], { from: alice });
       });
+
+      it('should have the correct rewards per staked share', async function () { 
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare4), SHARE_DELTA)
+      })
 
       it('should return remaining staking token to user balance', async function () {
         expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
@@ -423,62 +642,100 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion0 * 500 + this.portion1 * this.remainder), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion1) * this.remainder), TOKEN_DELTA
+          tokens(1000 / 2 - this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should emit Unstaked event', async function () {
         expectEvent(
-          this.res,
+          this.res0,
+          'Unstaked',
+          { user: alice, token: this.stk.address, amount: tokens(150), shares: shares(150) }
+        );
+        expectEvent(
+          this.res1,
           'Unstaked',
           { user: alice, token: this.stk.address, amount: tokens(50), shares: shares(50) }
         );
       });
 
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+      it('first unstake should emit RewardsDistributed event', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion1 * this.remainder), TOKEN_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceFirstReward), TOKEN_DELTA);
+      });
+
+      it('second unstake should emit RewardsDistributed event', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.token).eq(this.rew.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceSecondReward), TOKEN_DELTA);
       });
 
       it('should have no remaining stakes for user', async function () {
         expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
       });
 
+      it('should fully vest GYSR spent', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.8));
+      });
+
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res0,
+          'GysrVested',
+          { user: alice, amount: tokens(0.5) }
+        );
+        expectEvent(
+          this.res1,
+          'GysrVested',
+          { user: alice, amount: tokens(0.5) }
+        );
+      });
     });
 
     describe('when alice unstakes first', function () {
       beforeEach(async function () {
-        // alice partial unstake
-        // expect 50% of first stake to be returned at a 3.0 multiplier
-        // expect full second stake to be returned at a 2.0 multiplier
-        const raw0 = 50 * 90 + 100 * 30;
-        const inflated0 = 50 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion0 = inflated0 / (18000 - raw0 + inflated0);
+        // DAYS 0 - 40
+        this.rewardsPerStakedShare1 = 200 / (100 * this.mult)
+        this.aliceRewardTotal = 1000 / 5 * .5 // 1/5th of time elapsed
+        // DAYS 40 - 80
+        this.rewardsPerStakedShare2 = this.rewardsPerStakedShare1 + 200 / (100 * this.mult + 100)
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100) // 1/5th of time elapsed
 
-        // bob full unstake
-        // expect 2.5 multiplier on stake
-        const raw1 = 100 * 60;
-        const inflated1 = raw1 * 2.5;
-        this.portion1 = inflated1 / (18000 - raw0 - raw1 + inflated1);
+        this.bobRewardTotal = 1000 / 5 * 100 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 80 - 100
+        this.rewardsPerStakedShare3 = this.rewardsPerStakedShare2 + 100 / (100 * this.mult + 200)
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
 
-        // alice unstakes
-        await this.pool.unstake(tokens(150), [], [], { from: alice });
-        this.remainder = fromFixedPointBigNumber(await this.reward.totalUnlocked(), 10, DECIMALS);
+        this.bobRewardTotal += 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
 
-        // bob unstakes
-        this.res = await this.pool.unstake(tokens(100), [], [], { from: bob });
+        // Alice unstakes 150
+        this.rewardsPerStakedShare4 = this.rewardsPerStakedShare3 + this.aliceRedistributed / (50 * this.mult + 100)
+
+        this.bobRewardTotal += this.aliceRedistributed * 100 / (50 * this.mult + 100) * .75
+        this.bobRedistributed = this.bobRewardTotal / 3
+
+        // do first unstake
+        this.res0 = await this.pool.unstake(tokens(150), [], [], { from: alice });
+
+        // do second unstake
+        this.res1 = await this.pool.unstake(tokens(100), [], [], { from: bob });
       });
+
+      it('should have the correct rewards per staked share', async function () { 
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare4), SHARE_DELTA)
+      })
 
       it('should return staking tokens to first user balance', async function () {
         expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(950));
@@ -498,73 +755,110 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to first user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion0 * 500), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should disburse expected amount of reward token to second user', async function () {
         expect(await this.rew.balanceOf(bob)).to.be.bignumber.closeTo(
-          tokens(this.portion1 * this.remainder), TOKEN_DELTA
+          tokens(this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion1) * this.remainder), TOKEN_DELTA
+          tokens(1000 / 2 - this.aliceRewardTotal - this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should emit Unstaked event', async function () {
         expectEvent(
-          this.res,
+          this.res0,
+          'Unstaked',
+          { user: alice, token: this.stk.address, amount: tokens(150), shares: shares(150) }
+        );
+        expectEvent(
+          this.res1,
           'Unstaked',
           { user: bob, token: this.stk.address, amount: tokens(100), shares: shares(100) }
         );
       });
 
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+      it('first unstake should emit RewardsDistributed event', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.token).eq(this.rew.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
+      });
+
+      it('second unstake should emit RewardsDistributed event', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(bob);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion1 * this.remainder), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion1 * this.remainder), SHARE_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.bobRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.bobRewardTotal), SHARE_DELTA);
       });
 
       it('should have no remaining stakes for second user', async function () {
         expect(await this.reward.stakeCount(bob)).to.be.bignumber.equal(new BN(0));
       });
 
-      it('should reward alice more than bob', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.greaterThan(
-          await this.rew.balanceOf(bob)
+      it('should leave dust', async function () {
+        expect(await this.reward.rewardDust()).to.be.bignumber.closeTo(shares(this.bobRedistributed), SHARE_DELTA);
+      })
+
+      it('should vest half of GYSR spent', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.4));
+      });
+
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res0,
+          'GysrVested',
+          { user: alice, amount: tokens(0.5) }
         );
       });
     });
 
     describe('when bob unstakes first', function () {
       beforeEach(async function () {
-        // bob partial unstake
-        // expect 2.5 multiplier
-        const raw0 = 75 * 60;
-        const inflated0 = raw0 * 2.5;
-        this.portion0 = inflated0 / (18000 - raw0 + inflated0);
+        // DAYS 0 - 40
+        this.rewardsPerStakedShare1 = 200 / (100 * this.mult)
+        this.aliceRewardTotal = 1000 / 5 * .5 // 1/5th of time elapsed
+        // DAYS 40 - 80
+        this.rewardsPerStakedShare2 = this.rewardsPerStakedShare1 + 200 / (100 * this.mult + 100)
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100) // 1/5th of time elapsed
 
-        // alice partial unstake
-        // expect second stake to be returned at a 2.0 multiplier
-        const raw1 = 50 * 90 + 100 * 30;
-        const inflated1 = 50 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion1 = inflated1 / (18000 - raw0 - raw1 + inflated1);
+        this.bobRewardTotal = 1000 / 5 * 75 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
+        this.bobRedistributed = 1000 / 5 * 75 * .25 / (100 * this.mult + 100)
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 80 - 100
+        this.rewardsPerStakedShare3 = this.rewardsPerStakedShare2 + 100 / (100 * this.mult + 200)
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200)
 
-        // bob unstakes
-        await this.pool.unstake(tokens(75), [], [], { from: bob });
-        this.remainder = fromFixedPointBigNumber(await this.reward.totalUnlocked(), 10, DECIMALS);
+        this.bobRewardTotal += 1000 / 10 * (75 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
+        this.bobRedistributed += 1000 / 10 * (75 * .25) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
 
-        // alice unstakes
-        this.res = await this.pool.unstake(tokens(150), [], [], { from: alice });
+        this.rewardsPerStakedShare4 = this.rewardsPerStakedShare3 + this.bobRedistributed / (100 * this.mult + 125)
+
+        this.aliceRewardTotal += this.bobRedistributed * 100 * .25 / (100 * this.mult + 125)
+        this.aliceRewardTotal += this.bobRedistributed * 50 * this.mult / (100 * this.mult + 125)
+        this.aliceRedistributed += this.bobRedistributed * 100 * .75 / (100 * this.mult + 125)
+        
+
+        // do first unstake
+        this.res0 = await this.pool.unstake(tokens(75), [], [], { from: bob });
+
+        // do second unstake
+        this.res1 = await this.pool.unstake(tokens(150), [], [], { from: alice });
       });
+
+      it('should have the correct rewards per staked share', async function () { 
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare4), SHARE_DELTA)
+      })
 
       it('should return staking tokens to first user balance', async function () {
         expect(await this.stk.balanceOf(bob)).to.be.bignumber.equal(tokens(975));
@@ -584,36 +878,49 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to first user', async function () {
         expect(await this.rew.balanceOf(bob)).to.be.bignumber.closeTo(
-          tokens(this.portion0 * 500), TOKEN_DELTA
+          tokens(this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should disburse expected amount of reward token to second user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion1 * this.remainder), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion1) * this.remainder), TOKEN_DELTA
+          tokens(1000 / 2 - this.aliceRewardTotal - this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should emit Unstaked event', async function () {
         expectEvent(
-          this.res,
+          this.res0,
+          'Unstaked',
+          { user: bob, token: this.stk.address, amount: tokens(75), shares: shares(75) }
+        );
+        expectEvent(
+          this.res1,
           'Unstaked',
           { user: alice, token: this.stk.address, amount: tokens(150), shares: shares(150) }
         );
       });
 
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+      it('first unstake should emit RewardsDistributed event', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(bob);
+        expect(e.args.token).eq(this.rew.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.bobRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.bobRewardTotal), SHARE_DELTA);
+      });
+
+      it('second unstake should emit RewardsDistributed event', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion1 * this.remainder), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion1 * this.remainder), SHARE_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
       });
 
       it('should have one remaining stake for first user', async function () {
@@ -624,401 +931,32 @@ describe('Geyser integration', function () {
         expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
       });
 
-      it('should reward bob more than alice', async function () {
-        expect(await this.rew.balanceOf(bob)).to.be.bignumber.greaterThan(
-          await this.rew.balanceOf(alice)
-        );
-      });
-    });
+      it('should leave dust', async function () {
+        expect(await this.reward.rewardDust()).to.be.bignumber.closeTo(shares(this.aliceRedistributed), SHARE_DELTA);
+      })
 
-  });
-
-
-  describe('unstake with GYSR', function () {
-
-    beforeEach('staking and holding', async function () {
-      // funding and approval
-      await this.stk.transfer(alice, tokens(1000), { from: org });
-      await this.stk.transfer(bob, tokens(1000), { from: org });
-      await this.stk.approve(this.staking.address, tokens(100000), { from: alice });
-      await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
-      await this.gysr.transfer(alice, tokens(10), { from: org });
-      await this.gysr.transfer(bob, tokens(10), { from: org });
-      await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
-      await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
-
-      // alice stakes 100 tokens at 10 days
-      await time.increaseTo(this.t0.add(days(10)));
-      await this.pool.stake(tokens(100), [], [], { from: alice });
-
-      // bob stakes 100 tokens at 40 days
-      await time.increaseTo(this.t0.add(days(40)));
-      await this.pool.stake(tokens(100), [], [], { from: bob });
-
-      // alice stakes another 100 tokens at 70 days
-      await time.increaseTo(this.t0.add(days(70)));
-      await this.pool.stake(tokens(100), [], [], { from: alice });
-
-      // advance last 30 days (below)
-
-      // summary
-      // 100 days elapsed
-      // tokens unlocked: 500 (1000 @ 200 days)
-      // time bonus: 0.5 -> 2.0 over 90 days
-      // alice: 100 staked for 90 days, 100 staked for 30 days, 12000 staking days
-      // bob: 100 staked for 60 days, 6000 staking days
-      // total: 18000 share days
-    });
-
-    describe('when GYSR amount is greater than user total', function () {
-      it('should fail', async function () {
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(20).toString());
-
-        await expectRevert(
-          this.pool.unstake(tokens(200), [], data, { from: alice }),
-          'ERC20: transfer amount exceeds balance.'
-        );
-      });
-    });
-
-    describe('when one user unstakes all shares', function () {
-      beforeEach(async function () {
-        // expect 3.0x time multiplier on first stake, 2.0x time multiplier on second stake
-        // gysr bonus: 1.0 tokens, at initial 0.0 usage, unstaking 200/300 total
-        const mult = 1.0 + Math.log10(1.0 + (3.0 / 200.0) * 1.0 / (0.01 + 0.0));
-        const raw = 100 * 90 + 100 * 30;
-        const inflated = mult * (100 * 90 * 3.0 + 100 * 30 * 2.0);
-        this.portion = inflated / (18000 - raw + inflated);
-        this.usage = (raw / 18000) * (mult - 1.0) / mult;
-
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
-
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
-
-        this.res = await this.pool.unstake(tokens(200), [], data, { from: alice });
-      });
-
-      it('should return staking token to user balance', async function () {
-        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
-      });
-
-      it('should update the total staked for user', async function () {
-        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(0));
-      });
-
-      it('should disburse expected amount of reward token to user', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion * 500), TOKEN_DELTA
-        );
-      });
-
-      it('should reduce unlocked amount in reward module', async function () {
-        expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion) * 500), TOKEN_DELTA
-        );
-      });
-
-      it('should increase reward module GYSR usage', async function () {
-        expect(await this.reward.usage()).to.be.bignumber.closeTo(bonus(this.usage), BONUS_DELTA);
-      });
-
-      it('should increase pool GYSR usage', async function () {
-        expect(await this.pool.usage()).to.be.bignumber.closeTo(bonus(this.usage), BONUS_DELTA);
-      });
-
-      it('should transfer GYSR to Pool contract', async function () {
-        expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.equal(tokens(0.8));
-      });
-
-      it('should fully vest GYSR spent', async function () {
-        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.8));
-      });
-
-      it('should transfer GYSR fee to treasury', async function () {
-        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0.2));
-      });
-
-      it('should decrease GYSR balance of user', async function () {
-        expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9.0));
-      });
-
-      it('should emit Unstaked event', async function () {
-        expectEvent(
-          this.res,
-          'Unstaked',
-          { user: alice, token: this.stk.address, amount: tokens(200), shares: shares(200) }
-        );
-      });
-
-      it('should emit GysrSpent event', async function () {
-        expectEvent(
-          this.res,
-          'GysrSpent',
-          { user: alice, amount: tokens(1) }
-        );
+      it('should vest half GYSR spent', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.4));
       });
 
       it('should emit GysrVested event', async function () {
         expectEvent(
-          this.res,
+          this.res1,
           'GysrVested',
-          { user: alice, amount: tokens(1) }
+          { user: alice, amount: tokens(0.5) }
         );
-      });
-
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
-        expect(e.args.user).eq(alice);
-        expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 500), TOKEN_DELTA);
-      });
-
-      it('report gas', async function () {
-        reportGas('Pool', 'unstake', 'with GYSR', this.res)
-      });
-    });
-
-    describe('when one user unstakes some shares', function () {
-
-      beforeEach(async function () {
-        // first-in last-out
-        // expect 50% of first stake to be returned at a 3.0 multiplier
-        // expect full second stake to be returned at a 2.0 multiplier
-        // gysr bonus: 1.0 tokens, at initial 0 usage, unstaking 150/300 total
-        const mult = 1.0 + Math.log10(1.0 + (3.0 / 150.0) * 1.0 / (0.01 + 0.0));
-        const raw = 50 * 90 + 100 * 30;
-        const inflated = mult * (50 * 90 * 3.0 + 100 * 30 * 2.0);
-        this.portion = inflated / (18000 - raw + inflated);
-        this.usage = (raw / 18000) * (mult - 1.0) / mult;
-
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
-
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
-
-        // do unstake
-        this.res = await this.pool.unstake(tokens(150), [], data, { from: alice });
-      });
-
-      it('should return staking token to user balance', async function () {
-        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(950));
-      });
-
-      it('should update the total staked for user', async function () {
-        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(50));
-      });
-
-      it('should disburse expected amount of reward token to user', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion * 500), TOKEN_DELTA
-        );
-      });
-
-      it('should reduce unlocked amount in reward module', async function () {
-        expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion) * 500), TOKEN_DELTA
-        );
-      });
-
-      it('should increase reward module GYSR usage', async function () {
-        expect(await this.reward.usage()).to.be.bignumber.closeTo(bonus(this.usage), BONUS_DELTA);
-      });
-
-      it('should increase pool GYSR usage', async function () {
-        expect(await this.pool.usage()).to.be.bignumber.closeTo(bonus(this.usage), BONUS_DELTA);
-      });
-
-      it('should transfer GYSR to Pool contract', async function () {
-        expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.equal(tokens(0.8));
-      });
-
-      it('should fully vest GYSR spent', async function () {
-        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.8));
-      });
-
-      it('should transfer GYSR fee to treasury', async function () {
-        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0.2));
-      });
-
-      it('should decrease GYSR balance of user', async function () {
-        expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9.0));
-      });
-
-      it('should emit Unstaked event', async function () {
-        expectEvent(
-          this.res,
-          'Unstaked',
-          { user: alice, token: this.stk.address, amount: tokens(150), shares: shares(150) }
-        );
-      });
-
-      it('should emit GysrSpent event', async function () {
-        expectEvent(
-          this.res,
-          'GysrSpent',
-          { user: alice, amount: tokens(1) }
-        );
-      });
-
-      it('should emit GysrVested event', async function () {
-        expectEvent(
-          this.res,
-          'GysrVested',
-          { user: alice, amount: tokens(1) }
-        );
-      });
-
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
-        expect(e.args.user).eq(alice);
-        expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 500), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion * 500), SHARE_DELTA);
-      });
-
-      it('should have one remaining stake for user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
-      });
-
-      it('should unstake first-in last-out', async function () {
-        const stake = await this.reward.stakes(alice, 0);
-        expect(stake.timestamp).to.be.bignumber.closeTo(this.t0.add(days(10)), new BN(1));
-      });
-    });
-
-    describe('when one user unstakes multiple times', function () {
-      beforeEach(async function () {
-        // first unstake
-        // expect 50% of first stake to be returned at a 3.0 multiplier
-        // expect full second stake to be returned at a 2.0 multiplier
-        // gysr bonus: 1.0 tokens, at initial 0 usage, unstaking 150/300 total
-        const mult0 = 1.0 + Math.log10(1.0 + (3.0 / 150.0) * 1.0 / (0.01 + 0.0));
-        const raw0 = 50 * 90 + 100 * 30;
-        const inflated0 = mult0 * (50 * 90 * 3.0 + 100 * 30 * 2.0);
-        this.portion0 = inflated0 / (18000 - raw0 + inflated0);
-        const usage0 = (raw0 / 18000) * (mult0 - 1.0) / mult0;
-
-        // second unstake
-        // expect 3.0 multiplier on last 50% of first stake
-        // gysr bonus: 1.0 tokens, at 0.13 usage, unstaking 50/150 total
-        const mult1 = 1.0 + Math.log10(1.0 + (1.5 / 50.0) * 1.0 / (0.01 + usage0));
-        const raw1 = 50 * 90;
-        const inflated1 = mult1 * raw1 * 3.0;
-        this.portion1 = inflated1 / (18000 - raw0 - raw1 + inflated1);
-        const w1 = raw1 / (18000 - raw0);
-        this.usage1 = usage0 - w1 * usage0 + w1 * (mult1 - 1.0) / mult1;
-
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
-
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
-
-        // do first unstake
-        await this.pool.unstake(tokens(150), [], data, { from: alice });
-        this.remainder = fromFixedPointBigNumber(await this.reward.totalUnlocked(), 10, DECIMALS);
-
-        // do second unstake
-        this.res = await this.pool.unstake(tokens(50), [], data, { from: alice });
-      });
-
-      it('should return remaining staking token to user balance', async function () {
-        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
-      });
-
-      it('should update the total staked for user', async function () {
-        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(0));
-      });
-
-      it('should disburse expected amount of reward token to user', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion0 * 500 + this.portion1 * this.remainder), TOKEN_DELTA
-        );
-      });
-
-      it('should reduce unlocked amount in reward module', async function () {
-        expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion1) * this.remainder), TOKEN_DELTA
-        );
-      });
-
-      it('should increase reward module GYSR usage', async function () {
-        expect(await this.reward.usage()).to.be.bignumber.closeTo(bonus(this.usage1), BONUS_DELTA);
-      });
-
-      it('should increase pool GYSR usage', async function () {
-        expect(await this.pool.usage()).to.be.bignumber.closeTo(bonus(this.usage1), BONUS_DELTA);
-      });
-
-      it('should transfer GYSR to Pool contract', async function () {
-        expect(await this.gysr.balanceOf(this.pool.address)).to.be.bignumber.closeTo(tokens(1.6), TOKEN_DELTA);
-      });
-
-      it('should fully vest GYSR spent', async function () {
-        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(1.6));
-      });
-
-      it('should transfer GYSR fee to treasury', async function () {
-        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0.4));
-      });
-
-      it('should decrease GYSR balance of user', async function () {
-        expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(8.0));
-      });
-
-      it('should emit Unstaked event', async function () {
-        expectEvent(
-          this.res,
-          'Unstaked',
-          { user: alice, token: this.stk.address, amount: tokens(50), shares: shares(50) }
-        );
-      });
-
-      it('should emit GysrSpent event', async function () {
-        expectEvent(
-          this.res,
-          'GysrSpent',
-          { user: alice, amount: tokens(1) }
-        );
-      });
-
-      it('should emit GysrVested event', async function () {
-        expectEvent(
-          this.res,
-          'GysrVested',
-          { user: alice, amount: tokens(1) }
-        );
-      });
-
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
-        expect(e.args.user).eq(alice);
-        expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion1 * this.remainder), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion1 * this.remainder), SHARE_DELTA);
-      });
-
-      it('should have no remaining stakes for user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
       });
 
     });
 
-
+    
     describe('when fee is lowered', function () {
       beforeEach(async function () {
         // update fee
         await this.factory.setFee(bonus(0.1), { from: org });
 
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
-
         // spend gysr as usual
-        await this.pool.unstake(tokens(200), [], data, { from: alice });
+        await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
       it('should transfer higher portion of GYSR to Pool contract', async function () {
@@ -1043,11 +981,8 @@ describe('Geyser integration', function () {
         // update fee
         await this.factory.setFee(bonus(0.0), { from: org });
 
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
-
         // spend gysr as usual
-        await this.pool.unstake(tokens(200), [], data, { from: alice });
+        await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
       it('should transfer all GYSR to Pool contract', async function () {
@@ -1076,7 +1011,7 @@ describe('Geyser integration', function () {
         const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
 
         // spend gysr as usual
-        await this.pool.unstake(tokens(200), [], data, { from: alice });
+        await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
       it('should transfer GYSR to Pool contract', async function () {
@@ -1099,7 +1034,6 @@ describe('Geyser integration', function () {
         expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9.0));
       });
     });
-
   });
 
   describe('claim', function () {
@@ -1110,28 +1044,34 @@ describe('Geyser integration', function () {
       await this.stk.transfer(bob, tokens(1000), { from: org });
       await this.stk.approve(this.staking.address, tokens(100000), { from: alice });
       await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+      await this.gysr.transfer(alice, tokens(10), { from: org });
+      await this.gysr.transfer(bob, tokens(10), { from: org });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
 
-      // alice stakes 100 tokens at 10 days
+      this.t0 = await this.reward.lastUpdated();
+
+      const gysr = 0.01 // reduced because of proportion to total staked
+      const r = 0.01 // ratio is 0
+      const x = 1 + gysr / r
+      this.mult = 1 + Math.log10(x) // 1.3010299956639813
+
+      // alice stakes 100 tokens at 10 days with a 1.3x multiplier
       await time.increaseTo(this.t0.add(days(10)));
-      await this.pool.stake(tokens(100), [], [], { from: alice });
+      const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
+      await this.pool.stake(tokens(100), [], data, { from: alice });
+      this.t1 = await this.reward.lastUpdated();
 
       // bob stakes 100 tokens at 40 days
       await time.increaseTo(this.t0.add(days(40)));
       await this.pool.stake(tokens(100), [], [], { from: bob });
 
-      // alice stakes another 100 tokens at 70 days
-      await time.increaseTo(this.t0.add(days(70)));
+      // alice stakes another 100 tokens at 80 days
+      await time.increaseTo(this.t0.add(days(80)));
       await this.pool.stake(tokens(100), [], [], { from: alice });
 
-      // advance last 30 days (below)
-
-      // summary
-      // 100 days elapsed
-      // tokens unlocked: 500 (1000 @ 200 days)
-      // time bonus: 0.5 -> 2.0 over 90 days
-      // alice: 100 staked for 90 days, 100 staked for 30 days, 12000 staking days
-      // bob: 100 staked for 60 days, 6000 staking days
-      // total: 18000 share days
+      // advance last 20 days
+      await time.increaseTo(this.t0.add(days(100)));
     });
 
     describe('when claim amount is zero', function () {
@@ -1154,14 +1094,21 @@ describe('Geyser integration', function () {
 
     describe('when one user claims against all shares', function () {
       beforeEach(async function () {
-        // expect 3.0 multiplier on first stake, and 2.0 multiplier on second stake
-        const inflated = 100 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion = inflated / (18000 - 12000 + inflated);
+        // DAYS 0 - 40
+        this.aliceRewardTotal = 1000 / 5 // 1/5th of time elapsed
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 40 - 80
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult) / (100 * this.mult + 100)
+        this.bobRewardTotal = 1000 / 5 * 100 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
+        this.bobRewardUnpenalized = 1000 / 5 * 100 / (100 * this.mult + 100)
 
-        // claim all
+        // DAYS 80 - 100
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
+        this.bobRewardTotal += 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
+        this.bobRewardUnpenalized += 1000 / 10 * 100 / (100 * this.mult + 200)
+
         this.res = await this.pool.claim(tokens(200), [], [], { from: alice });
       });
 
@@ -1179,13 +1126,13 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion * 500), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion) * 500), TOKEN_DELTA
+          tokens(1000 / 2 - this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
@@ -1201,39 +1148,38 @@ describe('Geyser integration', function () {
         const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 500), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion * 500), SHARE_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
       });
 
       it('report gas', async function () {
-        reportGas('Pool', 'claim', 'geyser', this.res)
+        reportGas('Pool', 'claim', 'fountain', this.res)
       });
     });
 
     describe('when alice claims first', function () {
       beforeEach(async function () {
-        // alice partial claim
-        // expect 50% of first stake to be returned at a 3.0 multiplier
-        // expect full second stake to be returned at a 2.0 multiplier
-        const raw0 = 50 * 90 + 100 * 30;
-        const inflated0 = 50 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion0 = inflated0 / (18000 - raw0 + inflated0);
+        // DAYS 0 - 40
+        this.aliceRewardTotal = 1000 / 5 * .5 // 1/5th of time elapsed
+        // DAYS 40 - 80
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100) // 1/5th of time elapsed
 
-        // bob full claim
-        // expect 2.5 multiplier on stake
-        const raw1 = 100 * 60;
-        const inflated1 = raw1 * 2.5;
-        this.portion1 = inflated1 / (18000 - raw0 - raw1 + inflated1);
+        this.bobRewardTotal = 1000 / 5 * 100 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 80 - 100
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
 
-        // alice claims
-        await this.pool.claim(tokens(150), [], [], { from: alice });
-        this.remainder = fromFixedPointBigNumber(await this.reward.totalUnlocked(), 10, DECIMALS);
+        this.bobRewardTotal += 1000 / 10 * (100 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
 
-        // bob claims
-        this.res = await this.pool.claim(tokens(100), [], [], { from: bob });
+        this.bobRewardTotal += this.aliceRedistributed * 100 / (50 * this.mult + 250) * .75
+
+        // do first unstake
+        this.res0 = await this.pool.claim(tokens(150), [], [], { from: alice });
+
+        // do second unstake
+        this.res1 = await this.pool.claim(tokens(100), [], [], { from: bob });
       });
 
       it('should not return staking tokens to first user balance', async function () {
@@ -1262,67 +1208,77 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to first user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion0 * 500), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should disburse expected amount of reward token to second user', async function () {
         expect(await this.rew.balanceOf(bob)).to.be.bignumber.closeTo(
-          tokens(this.portion1 * this.remainder), TOKEN_DELTA
+          tokens(this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion1) * this.remainder), TOKEN_DELTA
+          tokens(1000 / 2 - this.aliceRewardTotal - this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should emit Claimed event', async function () {
         expectEvent(
-          this.res,
+          this.res0,
+          'Claimed',
+          { user: alice, token: this.stk.address, amount: tokens(150), shares: shares(150) }
+        );
+
+        expectEvent(
+          this.res1,
           'Claimed',
           { user: bob, token: this.stk.address, amount: tokens(100), shares: shares(100) }
         );
       });
 
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
-        expect(e.args.user).eq(bob);
+      it('first claim should emit RewardsDistributed event', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion1 * this.remainder), TOKEN_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
       });
 
-      it('should reward alice more than bob', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.greaterThan(
-          await this.rew.balanceOf(bob)
-        );
+      it('second claim should emit RewardsDistributed event', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(bob);
+        expect(e.args.token).eq(this.rew.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.bobRewardTotal), TOKEN_DELTA);
       });
+
     });
 
     describe('when bob claims first', function () {
       beforeEach(async function () {
-        // bob partial claim
-        // expect 2.5 multiplier
-        const raw0 = 75 * 60;
-        const inflated0 = raw0 * 2.5;
-        this.portion0 = inflated0 / (18000 - raw0 + inflated0);
+        // DAYS 0 - 40
+        this.aliceRewardTotal = 1000 / 5 * .5 // 1/5th of time elapsed
+        // DAYS 40 - 80
+        this.aliceRewardTotal += 1000 / 5 * (100 * this.mult * .5) / (100 * this.mult + 100) // 1/5th of time elapsed
 
-        // alice partial claim
-        // expect second stake to be returned at a 2.0 multiplier
-        const raw1 = 50 * 90 + 100 * 30;
-        const inflated1 = 50 * 90 * 3.0 + 100 * 30 * 2.0;
-        this.portion1 = inflated1 / (18000 - raw0 - raw1 + inflated1);
+        this.bobRewardTotal = 1000 / 5 * 75 * .75 / (100 * this.mult + 100) // 1/5th of time elapsed, 75% vested
+        this.bobRedistributed = 1000 / 5 * 75 * .25 / (100 * this.mult + 100)
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
+        // DAYS 80 - 100
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult * .5) / (100 * this.mult + 200) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 200) // 1/10th of time elapsed, 25% vested
 
-        // bob claims
-        await this.pool.claim(tokens(75), [], [], { from: bob });
-        this.remainder = fromFixedPointBigNumber(await this.reward.totalUnlocked(), 10, DECIMALS);
+        this.bobRewardTotal += 1000 / 10 * (75 * .75) / (100 * this.mult + 200) // 1/10th of time elapsed, 75% vested
+        this.bobRedistributed += 1000 / 10 * (75 * .25) / (100 * this.mult + 200) // 1/10th of the time elapsed, 75% penalty
 
-        // alice claims
-        this.res = await this.pool.claim(tokens(150), [], [], { from: alice });
+        this.aliceRewardTotal += this.bobRedistributed * 100 * .25 / (100 * this.mult + 200)
+        this.aliceRewardTotal += this.bobRedistributed * 50 * this.mult / (100 * this.mult + 200)
+
+        // do first unstake
+        this.res0 = await this.pool.claim(tokens(75), [], [], { from: bob });
+
+        // do second unstake
+        this.res1 = await this.pool.claim(tokens(150), [], [], { from: alice });
       });
 
       it('should not return staking tokens to first user balance', async function () {
@@ -1351,41 +1307,47 @@ describe('Geyser integration', function () {
 
       it('should disburse expected amount of reward token to first user', async function () {
         expect(await this.rew.balanceOf(bob)).to.be.bignumber.closeTo(
-          tokens(this.portion0 * 500), TOKEN_DELTA
+          tokens(this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should disburse expected amount of reward token to second user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion1 * this.remainder), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion1) * this.remainder), TOKEN_DELTA
+          tokens(1000 / 2 - this.aliceRewardTotal - this.bobRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should emit Claimed event', async function () {
         expectEvent(
-          this.res,
+          this.res0,
+          'Claimed',
+          { user: bob, token: this.stk.address, amount: tokens(75), shares: shares(75) }
+        );
+        expectEvent(
+          this.res1,
           'Claimed',
           { user: alice, token: this.stk.address, amount: tokens(150), shares: shares(150) }
         );
       });
 
-      it('should emit RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
-        expect(e.args.user).eq(alice);
+      it('first claim should emit RewardsDistributed event', async function () {
+        const e = this.res0.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(bob);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion1 * this.remainder), TOKEN_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.bobRewardTotal), TOKEN_DELTA);
       });
 
-      it('should reward bob more than alice', async function () {
-        expect(await this.rew.balanceOf(bob)).to.be.bignumber.greaterThan(
-          await this.rew.balanceOf(alice)
-        );
+      it('second claim should emit RewardsDistributed event', async function () {
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.token).eq(this.rew.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
       });
     });
 
@@ -1398,31 +1360,54 @@ describe('Geyser integration', function () {
       // funding and approval
       await this.stk.transfer(alice, tokens(1000), { from: org });
       await this.stk.approve(this.staking.address, tokens(100000), { from: alice });
-      await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+      await this.gysr.transfer(alice, tokens(10), { from: org });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
 
-      // alice stakes 100 tokens at 0 days
+      this.t0 = await this.reward.lastUpdated();
+
+      const gysr = 0.01 // reduced because of proportion to total staked
+      const r = 0.01 // ratio is 0
+      const x = 1 + gysr / r
+      this.mult = 1 + Math.log10(x) // 1.3010299956639813
+
+      // alice stakes 100 tokens at 10 days with a 1.3x multiplier
+      await time.increaseTo(this.t0.add(days(10)));
+      const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
+      await this.pool.stake(tokens(100), [], data, { from: alice });
+      this.t1 = await this.reward.lastUpdated();
+
+      // alice stakes another 100 tokens at 80 days
+      await time.increaseTo(this.t0.add(days(80)));
       await this.pool.stake(tokens(100), [], [], { from: alice });
 
-      // advance 50 days
-      await time.increaseTo(this.t0.add(days(50)));
-      await this.pool.update();
-
-      // summary
-      // 50 days elapsed
-      // tokens unlocked: 250 (1000 @ 200 days)
-      // alice has all shares
+      // advance last 20 days
+      await time.increaseTo(this.t0.add(days(100)));
     });
 
     describe('when user unstakes all shares', function () {
       beforeEach(async function () {
-        this.res = await this.pool.unstake(tokens(100), [], [], { from: alice });
+        // --- UNSTAKE 1
+        // DAYS 0 - 80
+        this.rewardsPerStakedShare1 = 200 / (100 * this.mult)
+        this.aliceRewardTotal = 1000 * 2 / 5 // 2/5 of time elapsed
+
+        // DAYS 80 - 100
+        this.rewardsPerStakedShare2 = this.rewardsPerStakedShare1 + 100 / (100 * this.mult + 100)
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult) / (100 * this.mult + 100) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 100) // 1/10th of time elapsed, 25% vested
+
+        this.res = await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
+
+      it('should have the correct rewards per staked share', async function () { 
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare2), SHARE_DELTA)
+      })
 
       it('should emit Unstaked event', async function () {
         expectEvent(
           this.res,
           'Unstaked',
-          { user: alice, token: this.stk.address, amount: tokens(100), shares: shares(100) }
+          { user: alice, token: this.stk.address, amount: tokens(200), shares: shares(200) }
         );
       });
 
@@ -1430,25 +1415,41 @@ describe('Geyser integration', function () {
         const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
-        expect(e.args.shares).to.be.bignumber.closeTo(shares(250), SHARE_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
       });
 
       it('should return staking token to user balance', async function () {
         expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
       });
 
-      it('should distribute full unlocked rewards to user', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
-      });
-
     });
 
     describe('when user unstakes multiple times, one large, one very small', function () {
       beforeEach(async function () {
-        this.res0 = await this.pool.unstake(tokens(100).sub(new BN(1)), [], [], { from: alice });
+
+        // DAYS 0 - 80
+        this.rewardsPerStakedShare1 = 400 / (100 * this.mult)
+        this.aliceRewardTotal = 1000 * 2 / 5 // 2/5 of time elapsed
+
+        // DAYS 80 - 100
+        this.rewardsPerStakedShare2 = this.rewardsPerStakedShare1 + 100 / (100 * this.mult + 100)
+        this.aliceRewardTotal += 1000 / 10 * (100 * this.mult) / (100 * this.mult + 100) // 1/10th of time elapsed, 100% vested
+        this.aliceRewardTotal += 1000 / 10 * (100 * .25) / (100 * this.mult + 100) // 1/10th of time elapsed, 25% vested
+        this.aliceRedistributed = 1000 / 10 * (100 * .75) / (100 * this.mult + 100) // 75% unvested
+
+        // Alice unstakes 
+        this.rewardsPerStakedShare3 = this.rewardsPerStakedShare2 + this.aliceRedistributed / (1 / 10 ** 18 * this.mult)
+
+        this.aliceSecondReward = this.aliceRedistributed
+
+        this.res0 = await this.pool.unstake(tokens(200).sub(new BN(1)), [], [], { from: alice });
         this.res1 = await this.pool.unstake(new BN(1), [], [], { from: alice });
       });
+
+      it('should have the correct rewards per staked share', async function () { 
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare3), shares(1).mul(tokens(1)))
+      })
 
       it('large unstake should emit Unstaked event', async function () {
         expectEvent(
@@ -1457,8 +1458,8 @@ describe('Geyser integration', function () {
           {
             user: alice,
             token: this.stk.address,
-            amount: tokens(100).sub(new BN(1)),
-            shares: tokens(100).sub(new BN(1)).mul(new BN(10 ** 6))
+            amount: tokens(200).sub(new BN(1)),
+            shares: tokens(200).sub(new BN(1)).mul(new BN(10 ** 6))
           }
         );
       });
@@ -1467,7 +1468,7 @@ describe('Geyser integration', function () {
         const e = this.res0.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
       });
 
       it('small unstake should emit Unstaked event', async function () {
@@ -1482,16 +1483,13 @@ describe('Geyser integration', function () {
         const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(0), TOKEN_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceSecondReward), TOKEN_DELTA);
       });
 
       it('should return all staking token to user balance', async function () {
         expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
       });
 
-      it('should distribute full unlocked rewards to user', async function () {
-        expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(tokens(250), TOKEN_DELTA);
-      });
     });
 
   });
@@ -1506,15 +1504,15 @@ describe('staking when unfunded', function () {
     this.gysr = await GeyserToken.new({ from: org });
     this.factory = await PoolFactory.new(this.gysr.address, treasury, { from: org });
     this.stakingModuleFactory = await ERC20StakingModuleFactory.new({ from: org });
-    this.rewardModuleFactory = await ERC20CompetitiveRewardModuleFactory.new({ from: org });
+    this.rewardModuleFactory = await ERC20FriendlyRewardModuleFactory.new({ from: org });
     this.stk = await TestLiquidityToken.new({ from: org });
     this.rew = await TestToken.new({ from: org });
 
     // encode sub factory arguments
     const stakingdata = web3.eth.abi.encodeParameter('address', this.stk.address);
     const rewarddata = web3.eth.abi.encodeParameters(
-      ['address', 'uint256', 'uint256', 'uint256'],
-      [this.rew.address, bonus(0.5).toString(), bonus(2.0).toString(), days(90).toString()]
+      ['address', 'uint256', 'uint256'],
+      [this.rew.address, bonus(0.5).toString(), days(90).toString()]
     );
 
     // whitelist sub factories
@@ -1534,7 +1532,7 @@ describe('staking when unfunded', function () {
 
     // get references to submodules
     this.staking = await ERC20StakingModule.at(await this.pool.stakingModule());
-    this.reward = await ERC20CompetitiveRewardModule.at(await this.pool.rewardModule());
+    this.reward = await ERC20FriendlyRewardModule.at(await this.pool.rewardModule());
 
     // (no funding)
 
@@ -1610,28 +1608,26 @@ describe('staking when unfunded', function () {
         // update
         await this.pool.update({ from: alice });
         this.t1 = await this.reward.lastUpdated();
+        this.rewardsPerStakedShare = 0
       });
 
-      it('should update users earned share seconds', async function () {
+      it('should should correctly calculate the vesting multiplier', async function () {
         const stake0 = await this.reward.stakes(alice, 0);
-        expect(stake0.shares.mul(this.t1.sub(stake0.timestamp))).to.be.bignumber.closeTo(
-          shares(100 * 30 * 24 * 60 * 60),
-          shares(100) // one share second
-        );
+        expect(await this.reward.timeVestingCoefficient(stake0.timestamp)).to.be.bignumber.closeTo(
+          tokens(2/3),
+          tokens(.000001)
+        )
 
         const stake1 = await this.reward.stakes(bob, 0);
-        expect(stake1.shares.mul(this.t1.sub(stake1.timestamp))).to.be.bignumber.closeTo(
-          shares(500 * 30 * 24 * 60 * 60),
-          shares(500) // one share second
-        );
+        expect(await this.reward.timeVestingCoefficient(stake1.timestamp)).to.be.bignumber.closeTo(
+          tokens(2/3),
+          tokens(.000001)
+        )
       });
 
-      it('should update total share seconds', async function () {
-        expect(await this.reward.totalStakingShareSeconds()).to.be.bignumber.closeTo(
-          shares(600 * 30 * 24 * 60 * 60),
-          shares(600) // one share second
-        );
-      });
+      it('should not have any rewards per staked share with no funding', async function () {
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.equal(new BN(0))
+      })
     });
   });
 
@@ -1696,15 +1692,15 @@ describe('staking against Boiler', function () {
     this.gysr = await GeyserToken.new({ from: org });
     this.factory = await PoolFactory.new(this.gysr.address, treasury, { from: org });
     this.stakingModuleFactory = await ERC20StakingModuleFactory.new({ from: org });
-    this.rewardModuleFactory = await ERC20CompetitiveRewardModuleFactory.new({ from: org });
+    this.rewardModuleFactory = await ERC20FriendlyRewardModuleFactory.new({ from: org });
     this.stk = await TestLiquidityToken.new({ from: org });
     this.rew = await TestToken.new({ from: org });
 
     // encode sub factory arguments
     const stakingdata = web3.eth.abi.encodeParameter('address', this.stk.address);
     const rewarddata = web3.eth.abi.encodeParameters(
-      ['address', 'uint256', 'uint256', 'uint256'],
-      [this.rew.address, bonus(0.5).toString(), bonus(2.0).toString(), days(90).toString()]
+      ['address', 'uint256', 'uint256'],
+      [this.rew.address, bonus(0).toString(), days(90).toString()]
     );
 
     // whitelist sub factories
@@ -1724,7 +1720,7 @@ describe('staking against Boiler', function () {
 
     // get references to submodules
     this.staking = await ERC20StakingModule.at(await this.pool.stakingModule());
-    this.reward = await ERC20CompetitiveRewardModule.at(await this.pool.rewardModule());
+    this.reward = await ERC20FriendlyRewardModule.at(await this.pool.rewardModule());
 
     // fund for future start to configure as "Boiler"
     await this.rew.transfer(owner, tokens(10000), { from: org });
@@ -1802,33 +1798,30 @@ describe('staking against Boiler', function () {
         await this.pool.stake(tokens(500), [], [], { from: bob });
 
         // advance 30 days
-        await time.increaseTo(this.t0.add(days(40)));
+        await time.increaseTo(this.t0.add(days(70)));
 
         // update
         await this.pool.update({ from: alice });
         this.t1 = await this.reward.lastUpdated();
       });
 
-      it('should update users earned share seconds', async function () {
+      it('should should correctly calculate the vesting multiplier', async function () {
         const stake0 = await this.reward.stakes(alice, 0);
-        expect(stake0.shares.mul(this.t1.sub(stake0.timestamp))).to.be.bignumber.closeTo(
-          shares(100 * 30 * 24 * 60 * 60),
-          shares(100) // one share second
-        );
+        expect(await this.reward.timeVestingCoefficient(stake0.timestamp)).to.be.bignumber.closeTo(
+          tokens(2/3),
+          tokens(.000001)
+        )
 
         const stake1 = await this.reward.stakes(bob, 0);
-        expect(stake1.shares.mul(this.t1.sub(stake1.timestamp))).to.be.bignumber.closeTo(
-          shares(500 * 30 * 24 * 60 * 60),
-          shares(500) // one share second
-        );
+        expect(await this.reward.timeVestingCoefficient(stake1.timestamp)).to.be.bignumber.closeTo(
+          tokens(2/3),
+          tokens(.000001)
+        )
       });
 
-      it('should update total share seconds', async function () {
-        expect(await this.reward.totalStakingShareSeconds()).to.be.bignumber.closeTo(
-          shares(600 * 30 * 24 * 60 * 60),
-          shares(600) // one share second
-        );
-      });
+      it('should increase rewards per staked share', async function () {
+        expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(1000 / 3 / 600), TOKEN_DELTA)
+      })
     });
   });
 
@@ -1888,19 +1881,14 @@ describe('staking against Boiler', function () {
         await this.pool.stake(tokens(100), [], [], { from: alice });
         await this.pool.stake(tokens(100), [], [], { from: bob });
 
-        // alice: 6000 share days
-        // bob: 6000 share days
-        // total: 12000 share days
-        // bonus: 2.5x at 60 days
-        // unlocked: 1/3 of 1000 at 30 days into period
-        this.portion = 2.5 * 6000 / (12000 - 6000 + 2.5 * 6000);
-        this.unlocked = 1 / 3 * 1000;
+        this.aliceRewardTotal = 1000 / 3 * 100 * 2 / 3 / 200
 
         // advance 60 days
         await time.increaseTo(this.t0.add(days(70)));
 
         // do unstake
         this.res = await this.pool.unstake(tokens(100), [], [], { from: alice });
+
       });
 
       it('should return staking token to user balance', async function () {
@@ -1913,13 +1901,13 @@ describe('staking against Boiler', function () {
 
       it('should disburse expected amount of reward token to user', async function () {
         expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
-          tokens(this.portion * this.unlocked), TOKEN_DELTA
+          tokens(this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
       it('should reduce unlocked amount in reward module', async function () {
         expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
-          tokens((1.0 - this.portion) * this.unlocked), TOKEN_DELTA
+          tokens(1000 / 3 - this.aliceRewardTotal), TOKEN_DELTA
         );
       });
 
@@ -1933,7 +1921,7 @@ describe('staking against Boiler', function () {
         const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.rew.address);
-        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * this.unlocked), TOKEN_DELTA);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
       });
 
       it('should have no remaining stakes for user', async function () {
