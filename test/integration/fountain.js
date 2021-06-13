@@ -285,7 +285,7 @@ describe('Fountain integration', function () {
         expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(1))
       })
 
-      it('should decrease each users GYSR balance', async function() {
+      it('should decrease each users GYSR balance', async function () {
         expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9));
         expect(await this.gysr.balanceOf(bob)).to.be.bignumber.equal(tokens(9));
       })
@@ -373,7 +373,7 @@ describe('Fountain integration', function () {
         );
       });
 
-      it('should decrease one users GYSR balance', async function() {
+      it('should decrease one users GYSR balance', async function () {
         expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9));
         expect(await this.gysr.balanceOf(bob)).to.be.bignumber.equal(tokens(10));
       })
@@ -628,7 +628,7 @@ describe('Fountain integration', function () {
         this.res1 = await this.pool.unstake(tokens(50), [], [], { from: alice });
       });
 
-      it('should have the correct rewards per staked share', async function () { 
+      it('should have the correct rewards per staked share', async function () {
         expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare4), SHARE_DELTA)
       })
 
@@ -733,7 +733,7 @@ describe('Fountain integration', function () {
         this.res1 = await this.pool.unstake(tokens(100), [], [], { from: bob });
       });
 
-      it('should have the correct rewards per staked share', async function () { 
+      it('should have the correct rewards per staked share', async function () {
         expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare4), SHARE_DELTA)
       })
 
@@ -847,7 +847,7 @@ describe('Fountain integration', function () {
         this.aliceRewardTotal += this.bobRedistributed * 100 * .25 / (100 * this.mult + 125)
         this.aliceRewardTotal += this.bobRedistributed * 50 * this.mult / (100 * this.mult + 125)
         this.aliceRedistributed += this.bobRedistributed * 100 * .75 / (100 * this.mult + 125)
-        
+
 
         // do first unstake
         this.res0 = await this.pool.unstake(tokens(75), [], [], { from: bob });
@@ -856,7 +856,7 @@ describe('Fountain integration', function () {
         this.res1 = await this.pool.unstake(tokens(150), [], [], { from: alice });
       });
 
-      it('should have the correct rewards per staked share', async function () { 
+      it('should have the correct rewards per staked share', async function () {
         expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare4), SHARE_DELTA)
       })
 
@@ -949,7 +949,7 @@ describe('Fountain integration', function () {
 
     });
 
-    
+
     describe('when fee is lowered', function () {
       beforeEach(async function () {
         // update fee
@@ -1136,6 +1136,14 @@ describe('Fountain integration', function () {
         );
       });
 
+      it('should vest spent GYSR and update pool balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.8));
+      });
+
+      it('should transfer GYSR fee to treasury', async function () {
+        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0.2));
+      });
+
       it('should emit Claimed event', async function () {
         expectEvent(
           this.res,
@@ -1150,6 +1158,14 @@ describe('Fountain integration', function () {
         expect(e.args.token).eq(this.rew.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
         expect(e.args.shares).to.be.bignumber.closeTo(shares(this.aliceRewardTotal), SHARE_DELTA);
+      });
+
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res,
+          'GysrVested',
+          { user: alice, amount: tokens(1) }
+        );
       });
 
       it('report gas', async function () {
@@ -1224,6 +1240,14 @@ describe('Fountain integration', function () {
         );
       });
 
+      it('should vest spent GYSR and update pool balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.4));
+      });
+
+      it('should transfer GYSR fee to treasury', async function () {
+        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0.1));
+      });
+
       it('should emit Claimed event', async function () {
         expectEvent(
           this.res0,
@@ -1250,6 +1274,14 @@ describe('Fountain integration', function () {
         expect(e.args.user).eq(bob);
         expect(e.args.token).eq(this.rew.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.bobRewardTotal), TOKEN_DELTA);
+      });
+
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res0,
+          'GysrVested',
+          { user: alice, amount: tokens(0.5) }
+        );
       });
 
     });
@@ -1323,6 +1355,14 @@ describe('Fountain integration', function () {
         );
       });
 
+      it('should vest spent GYSR and update pool balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(0.4));
+      });
+
+      it('should transfer GYSR fee to treasury', async function () {
+        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0.1));
+      });
+
       it('should emit Claimed event', async function () {
         expectEvent(
           this.res0,
@@ -1349,6 +1389,15 @@ describe('Fountain integration', function () {
         expect(e.args.token).eq(this.rew.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.aliceRewardTotal), TOKEN_DELTA);
       });
+
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res1,
+          'GysrVested',
+          { user: alice, amount: tokens(0.5) }
+        );
+      });
+
     });
 
   });
@@ -1399,7 +1448,7 @@ describe('Fountain integration', function () {
         this.res = await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
-      it('should have the correct rewards per staked share', async function () { 
+      it('should have the correct rewards per staked share', async function () {
         expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare2), SHARE_DELTA)
       })
 
@@ -1447,7 +1496,7 @@ describe('Fountain integration', function () {
         this.res1 = await this.pool.unstake(new BN(1), [], [], { from: alice });
       });
 
-      it('should have the correct rewards per staked share', async function () { 
+      it('should have the correct rewards per staked share', async function () {
         expect(await this.reward.rewardsPerStakedShare()).to.be.bignumber.closeTo(tokens(this.rewardsPerStakedShare3), shares(1).mul(tokens(1)))
       })
 
@@ -1614,13 +1663,13 @@ describe('staking when unfunded', function () {
       it('should should correctly calculate the vesting multiplier', async function () {
         const stake0 = await this.reward.stakes(alice, 0);
         expect(await this.reward.timeVestingCoefficient(stake0.timestamp)).to.be.bignumber.closeTo(
-          tokens(2/3),
+          tokens(2 / 3),
           tokens(.000001)
         )
 
         const stake1 = await this.reward.stakes(bob, 0);
         expect(await this.reward.timeVestingCoefficient(stake1.timestamp)).to.be.bignumber.closeTo(
-          tokens(2/3),
+          tokens(2 / 3),
           tokens(.000001)
         )
       });
@@ -1808,13 +1857,13 @@ describe('staking against Boiler', function () {
       it('should should correctly calculate the vesting multiplier', async function () {
         const stake0 = await this.reward.stakes(alice, 0);
         expect(await this.reward.timeVestingCoefficient(stake0.timestamp)).to.be.bignumber.closeTo(
-          tokens(2/3),
+          tokens(2 / 3),
           tokens(.000001)
         )
 
         const stake1 = await this.reward.stakes(bob, 0);
         expect(await this.reward.timeVestingCoefficient(stake1.timestamp)).to.be.bignumber.closeTo(
-          tokens(2/3),
+          tokens(2 / 3),
           tokens(.000001)
         )
       });

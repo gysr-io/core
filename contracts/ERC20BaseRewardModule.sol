@@ -114,7 +114,7 @@ abstract contract ERC20BaseRewardModule is IRewardModule {
     }
 
     /**
-     * @notice fund Geyser by locking up reward tokens for future distribution
+     * @notice fund pool by locking up reward tokens for future distribution
      * @param token contract address of reward token
      * @param amount number of reward tokens to lock up as funding
      * @param duration period (seconds) over which funding will be unlocked

@@ -82,5 +82,9 @@ module.exports = {
     timeout: 5000
   },
 
-  plugins: ["truffle-contract-size"]
+  api_keys: {
+    etherscan: process.env.ETHERSCAN_KEY
+  },
+
+  plugins: ['truffle-contract-size', 'truffle-plugin-verify']
 };

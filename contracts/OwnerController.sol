@@ -62,7 +62,7 @@ contract OwnerController {
      * @dev Modifier that throws if called by any account other than the owner.
      */
     modifier onlyOwner() {
-        requireOwner();
+        require(_owner == msg.sender, "oc1");
         _;
     }
 
@@ -70,7 +70,7 @@ contract OwnerController {
      * @dev Modifier that throws if called by any account other than the controller.
      */
     modifier onlyController() {
-        requireController();
+        require(_controller == msg.sender, "oc2");
         _;
     }
 

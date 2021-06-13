@@ -1210,6 +1210,107 @@ describe('Geyser integration', function () {
       });
     });
 
+    describe('when one user claims with GYSR', function () {
+
+      beforeEach(async function () {
+        // acquire gysr tokens
+        await this.gysr.transfer(alice, tokens(10), { from: org });
+        await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
+
+        // expect 3.0 time multiplier on first stake, and time 2.0 multiplier on second stake
+        // gysr bonus: 5.0 tokens at 0.0 usage, unstaking 200/300 total
+        const mult = 1.0 + Math.log10(1.0 + (0.01 * 300 / 200) * 5.0 / (0.01 + 0.0));
+        const raw = 100 * 90 + 100 * 30;
+        const inflated = mult * (100 * 90 * 3.0 + 100 * 30 * 2.0);
+        this.portion = inflated / (18000 - raw + inflated);
+        this.usage = (raw / 18000) * (mult - 1.0) / mult;
+
+        // advance last 30 days
+        await time.increaseTo(this.t0.add(days(100)));
+
+        // encode gysr amount as bytes
+        const data = web3.eth.abi.encodeParameter('uint256', tokens(5).toString());
+
+        // advance last 30 days
+        await time.increaseTo(this.t0.add(days(100)));
+
+        // claim all
+        this.res = await this.pool.claim(tokens(200), [], data, { from: alice });
+      });
+
+      it('should not return staking token to user balance', async function () {
+        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(800));
+      });
+
+      it('should not affect the staking balance for user', async function () {
+        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(200));
+      });
+
+      it('should still have one stake for user', async function () {
+        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should disburse expected amount of reward token to user', async function () {
+        expect(await this.rew.balanceOf(alice)).to.be.bignumber.closeTo(
+          tokens(this.portion * 500), TOKEN_DELTA
+        );
+      });
+
+      it('should reduce unlocked amount in reward module', async function () {
+        expect(await this.reward.totalUnlocked()).to.be.bignumber.closeTo(
+          tokens((1.0 - this.portion) * 500), TOKEN_DELTA
+        );
+      });
+
+      it('should vest spent GYSR and update pool balance', async function () {
+        expect(await this.pool.gysrBalance()).to.be.bignumber.equal(tokens(4.0));
+      });
+
+      it('should transfer GYSR fee to treasury', async function () {
+        expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(1.0));
+      });
+
+      it('should increase pool GYSR usage', async function () {
+        expect(await this.pool.usage()).to.be.bignumber.closeTo(bonus(this.usage), BONUS_DELTA);
+      });
+
+      it('should emit Claimed event', async function () {
+        expectEvent(
+          this.res,
+          'Claimed',
+          { user: alice, token: this.stk.address, amount: tokens(200), shares: shares(200) }
+        );
+      });
+
+      it('should emit RewardsDistributed event', async function () {
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        expect(e.args.user).eq(alice);
+        expect(e.args.token).eq(this.rew.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.portion * 500), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(this.portion * 500), SHARE_DELTA);
+      });
+
+      it('should emit GysrSpent event', async function () {
+        expectEvent(
+          this.res,
+          'GysrSpent',
+          { user: alice, amount: tokens(5.0) }
+        );
+      });
+
+      it('should emit GysrVested event', async function () {
+        expectEvent(
+          this.res,
+          'GysrVested',
+          { user: alice, amount: tokens(5.0) }
+        );
+      });
+
+      it('report gas', async function () {
+        reportGas('Pool', 'claim', 'geyser', this.res)
+      });
+    });
+
     describe('when alice claims first', function () {
       beforeEach(async function () {
         // alice partial claim

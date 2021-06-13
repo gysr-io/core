@@ -77,7 +77,12 @@ contract ERC20StakingModule is IStakingModule {
     /**
      * @inheritdoc IStakingModule
      */
-    function totals() public view override returns (uint256[] memory totals_) {
+    function totals()
+        external
+        view
+        override
+        returns (uint256[] memory totals_)
+    {
         totals_ = new uint256[](1);
         totals_[0] = _token.balanceOf(address(this));
     }
@@ -155,12 +160,12 @@ contract ERC20StakingModule is IStakingModule {
     /**
      * @inheritdoc IStakingModule
      */
-    function update(address) external override onlyOwner {}
+    function update(address) external override {}
 
     /**
      * @inheritdoc IStakingModule
      */
-    function clean() external override onlyOwner {}
+    function clean() external override {}
 
     /**
      * @dev internal helper to get user balance

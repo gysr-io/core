@@ -295,8 +295,8 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         bytes calldata data
     ) external override onlyOwner returns (uint256 spent, uint256 vested) {
         _update();
-        _unstake(account, user, shares);
-        (spent, vested) = _stake(account, user, shares, data);
+        (, vested) = _unstake(account, user, shares);
+        (spent, ) = _stake(account, user, shares, data);
     }
 
     /**
@@ -312,9 +312,8 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         uint256 rewardTally
     ) internal view returns (uint256) {
         return
-            ((rewardsPerStakedShare - rewardTally) * shares * bonus) /
-            10**DECIMALS / // counteract bonus coefficient
-            10**DECIMALS; // counteract rewardsPerStakedShare coefficient
+            ((((rewardsPerStakedShare - rewardTally) * shares) / 10**DECIMALS) * // counteract rewardsPerStakedShare coefficient
+                bonus) / 10**DECIMALS; // counteract bonus coefficient
     }
 
     /**
@@ -339,7 +338,8 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      */
-    function update(address) external override onlyOwner {
+    function update(address) external override {
+        requireOwner();
         _update();
     }
 
@@ -347,7 +347,8 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
      * @notice method called ad hoc to clean up and perform additional accounting
      * @dev will only be called manually, and should not contain any essential logic
      */
-    function clean() external override onlyOwner {
+    function clean() external override {
+        requireOwner();
         _update();
         _clean(address(_token));
     }

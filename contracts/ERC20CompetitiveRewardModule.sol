@@ -162,14 +162,16 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      */
-    function update(address) external override onlyOwner {
+    function update(address) external override {
+        requireOwner();
         _update();
     }
 
     /**
      * @inheritdoc IRewardModule
      */
-    function clean() external override onlyOwner {
+    function clean() external override {
+        requireOwner();
         _update();
         _clean(address(_token));
     }
