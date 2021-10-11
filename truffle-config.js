@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const LedgerWalletProvider = require('@umaprotocol/truffle-ledger-provider');
+const HDWalletProvider = require('@truffle/hdwallet-provider');
 
 module.exports = {
   networks: {
@@ -62,7 +63,21 @@ module.exports = {
         },
         `https://mainnet.infura.io/v3/${process.env.INFURA_KEY}`
       ),
+      gas: 10000000,
+      gasPrice: 20000000000,  // 20 gwei
       network_id: 1
+    },
+
+    polygon: {
+      provider: () => new HDWalletProvider({
+        mnemonic: {
+          phrase: process.env.MNEMONIC_PHRASE
+        },
+        providerOrUrl: `https://polygon-mainnet.infura.io/v3/${process.env.INFURA_KEY}`
+      }),
+      network_id: 137,
+      gas: 10000000,
+      gasPrice: 2000000000 // 2 gwei
     },
   },
 
@@ -83,7 +98,8 @@ module.exports = {
   },
 
   api_keys: {
-    etherscan: process.env.ETHERSCAN_KEY
+    etherscan: process.env.ETHERSCAN_KEY,
+    polygonscan: process.env.POLYGONSCAN_KEY
   },
 
   plugins: ['truffle-contract-size', 'truffle-plugin-verify']

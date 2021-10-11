@@ -9,8 +9,7 @@ see [gysr.io](https://www.gysr.io/)
 ## Setup
 
 Both **Node.js** and **npm** are required for package management and testing. See instructions
-for installation [here](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm). This
-codebase has been tested with `Node.js: v10.16.0` and `npm: 6.9.0`.
+for installation [here](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm).
 
 This project uses [OpenZeppelin](https://docs.openzeppelin.com/)
 and [Truffle](https://www.trufflesuite.com/docs/truffle)
