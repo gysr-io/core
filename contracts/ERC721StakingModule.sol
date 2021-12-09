@@ -100,7 +100,7 @@ contract ERC721StakingModule is IStakingModule {
         require(amount <= _token.balanceOf(user), "smn3");
         require(data.length == 32 * amount, "smn4");
 
-        uint256 sz = counts[user];
+        uint256 count = counts[user];
 
         // stake
         for (uint256 i = 0; i < amount; i++) {
@@ -113,7 +113,7 @@ contract ERC721StakingModule is IStakingModule {
 
             // ownership mappings
             owners[id] = user;
-            uint256 len = sz + i;
+            uint256 len = count + i;
             tokenByOwner[user][len] = id;
             tokenIndex[id] = len;
 
@@ -122,13 +122,13 @@ contract ERC721StakingModule is IStakingModule {
         }
 
         // update position
-        counts[user] = sz + amount;
+        counts[user] = count + amount;
 
         // emit
-        uint256 s = amount * SHARES_PER_TOKEN;
-        emit Staked(user, address(_token), amount, s);
+        uint256 shares = amount * SHARES_PER_TOKEN;
+        emit Staked(user, address(_token), amount, shares);
 
-        return (user, s);
+        return (user, shares);
     }
 
     /**
@@ -141,8 +141,8 @@ contract ERC721StakingModule is IStakingModule {
     ) external override onlyOwner returns (address, uint256) {
         // validate
         require(amount > 0, "smn5");
-        uint256 sz = counts[user];
-        require(amount <= sz, "smn6");
+        uint256 count = counts[user];
+        require(amount <= count, "smn6");
         require(data.length == 32 * amount, "smn7");
 
         // unstake
@@ -159,8 +159,8 @@ contract ERC721StakingModule is IStakingModule {
             delete owners[id];
 
             // clean up ownership mappings
-            uint256 lastIndex = sz - 1 - i;
-            if (amount != sz) {
+            uint256 lastIndex = count - 1 - i;
+            if (amount != count) {
                 // reindex on partial unstake
                 uint256 index = tokenIndex[id];
                 if (index != lastIndex) {
@@ -177,13 +177,13 @@ contract ERC721StakingModule is IStakingModule {
         }
 
         // update position
-        counts[user] = sz - amount;
+        counts[user] = count - amount;
 
         // emit
-        uint256 s = amount * SHARES_PER_TOKEN;
-        emit Unstaked(user, address(_token), amount, s);
+        uint256 shares = amount * SHARES_PER_TOKEN;
+        emit Unstaked(user, address(_token), amount, shares);
 
-        return (user, s);
+        return (user, shares);
     }
 
     /**
@@ -198,9 +198,9 @@ contract ERC721StakingModule is IStakingModule {
         require(amount > 0, "smn9");
         require(amount <= counts[user], "smn10");
 
-        uint256 s = amount * SHARES_PER_TOKEN;
-        emit Claimed(user, address(_token), amount, s);
-        return (user, s);
+        uint256 shares = amount * SHARES_PER_TOKEN;
+        emit Claimed(user, address(_token), amount, shares);
+        return (user, shares);
     }
 
     /**
