@@ -1,4 +1,4 @@
-// integrations tests for "Geyser" Pool
+// integration tests for "Geyser" Pool
 // made up of ERC20StakingModule and ERC20CompetitiveRewardModule
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
@@ -25,6 +25,7 @@ const ERC20CompetitiveRewardModuleFactory = contract.fromArtifact('ERC20Competit
 const ERC20CompetitiveRewardModule = contract.fromArtifact('ERC20CompetitiveRewardModule');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
+const TestStakeUnstake = contract.fromArtifact('TestStakeUnstake');
 
 // need decent tolerance to account for potential timing error
 const TOKEN_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
@@ -672,6 +673,9 @@ describe('Geyser integration', function () {
 
     describe('when GYSR amount is greater than user total', function () {
       it('should fail', async function () {
+        // advance last 30 days
+        await time.increaseTo(this.t0.add(days(100)));
+
         // encode gysr amount as bytes
         const data = web3.eth.abi.encodeParameter('uint256', tokens(20).toString());
 
@@ -1014,6 +1018,9 @@ describe('Geyser integration', function () {
         // update fee
         await this.factory.setFee(bonus(0.1), { from: org });
 
+        // advance last 30 days
+        await time.increaseTo(this.t0.add(days(100)));
+
         // encode gysr amount as bytes
         const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
 
@@ -1043,6 +1050,9 @@ describe('Geyser integration', function () {
         // update fee
         await this.factory.setFee(bonus(0.0), { from: org });
 
+        // advance last 30 days
+        await time.increaseTo(this.t0.add(days(100)));
+
         // encode gysr amount as bytes
         const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
 
@@ -1071,6 +1081,9 @@ describe('Geyser integration', function () {
       beforeEach(async function () {
         // update treasury
         await this.factory.setTreasury(other, { from: org });
+
+        // advance last 30 days
+        await time.increaseTo(this.t0.add(days(100)));
 
         // encode gysr amount as bytes
         const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
@@ -1597,6 +1610,47 @@ describe('Geyser integration', function () {
 
   });
 
+
+  describe('usage manipulation', function () {
+
+    beforeEach('staking and holding', async function () {
+      // funding and approval
+      await this.stk.transfer(alice, tokens(10000), { from: org });
+      await this.stk.transfer(bob, tokens(1000), { from: org });
+      await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+      await this.gysr.transfer(bob, tokens(10), { from: org });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
+
+      // bob stakes 100 tokens
+      await this.pool.stake(tokens(100), [], [], { from: bob });
+
+      // advance time
+      await time.increaseTo(this.t0.add(days(100)));
+
+      // setup proxy contract
+      this.proxy = await TestStakeUnstake.new({ from: alice });
+      await this.proxy.target(this.pool.address, { from: alice });
+      await this.stk.approve(this.proxy.address, tokens(100000), { from: alice });
+      await this.proxy.deposit(this.stk.address, tokens(10000), { from: alice });
+    });
+
+    describe('when proxy attempts stake-unstake', function () {
+
+      it('should block unstake and revert', async function () {
+        //const res = await this.proxy.execute(tokens(10000), { from: alice });
+        //console.log(res.logs[0].args);
+        //console.log(res.logs[1].args);
+        //console.log(res.logs[2].args);
+        await expectRevert(
+          this.proxy.execute(tokens(10000), { from: alice }),
+          'crm3'
+        );
+      });
+
+    });
+
+  });
+
 });
 
 describe('staking when unfunded', function () {
@@ -1776,6 +1830,70 @@ describe('staking when unfunded', function () {
 
       it('should not emit reward event', async function () {
         expect(this.res.logs.filter(l => l.event === 'RewardsDistributed').length).to.be.equal(0);
+      });
+
+      it('should have no remaining stakes for user', async function () {
+        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
+      });
+
+    });
+
+    describe('when user unstakes with GYSR', function () {
+
+      beforeEach(async function () {
+        // get gysr
+        await this.gysr.transfer(alice, tokens(50), { from: org });
+        await this.gysr.approve(this.pool.address, tokens(100000), { from: alice });
+
+        // alice and bob stake
+        await this.pool.stake(tokens(100), [], [], { from: alice });
+        await this.pool.stake(tokens(100), [], [], { from: bob });
+        this.t0 = await this.reward.lastUpdated();
+
+        // advance 30 days
+        await time.increaseTo(this.t0.add(days(30)));
+
+        // encode gysr amount as bytes
+        const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+
+        // do unstake
+        this.res = await this.pool.unstake(tokens(100), [], data, { from: alice });
+      });
+
+      it('should return staking token to user balance', async function () {
+        expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
+      });
+
+      it('should update the total staked for user', async function () {
+        expect((await this.pool.stakingBalances(alice))[0]).to.be.bignumber.equal(tokens(0));
+      });
+
+      it('should not disburse any reward token to user', async function () {
+        expect(await this.rew.balanceOf(alice)).to.be.bignumber.equal(tokens(0));
+      });
+
+      it('should not actually transfer any GYSR token from user', async function () {
+        expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(50));
+      });
+
+      it('should emit unstake event', async function () {
+        expectEvent(
+          this.res,
+          'Unstaked',
+          { user: alice, token: this.stk.address, amount: tokens(100), shares: shares(100) }
+        );
+      });
+
+      it('should not emit reward event', async function () {
+        expect(this.res.logs.filter(l => l.event === 'RewardsDistributed').length).to.be.equal(0);
+      });
+
+      it('should not emit GysrSpent event', async function () {
+        expect(this.res.logs.filter(l => l.event === 'GysrSpent').length).to.be.equal(0);
+      });
+
+      it('should not emit GysrVested event', async function () {
+        expect(this.res.logs.filter(l => l.event === 'GysrVested').length).to.be.equal(0);
       });
 
       it('should have no remaining stakes for user', async function () {

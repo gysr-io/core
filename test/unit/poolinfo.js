@@ -23,10 +23,6 @@ const PoolInfo = contract.fromArtifact('PoolInfo');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
 
-// need decent tolerance to account for potential timing error
-const TOKEN_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
-const SHARE_DELTA = toFixedPointBigNumber(0.0001 * (10 ** 6), 10, DECIMALS);
-
 
 describe('PoolInfo', function () {
     const [owner, org, treasury, stakingModuleFactory, rewardModuleFactory, alice, bob, other] = accounts;

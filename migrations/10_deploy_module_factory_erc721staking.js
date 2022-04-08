@@ -9,7 +9,7 @@ module.exports = async function (deployer) {
     const modulefactory = await ERC721StakingModuleFactory.deployed();
 
     // whitelist
-    //const factory = await PoolFactory.at(process.env.FACTORY_ADDRESS);
-    //const res = await factory.setWhitelist(modulefactory.address, 1);
+    const factory = await PoolFactory.at(process.env.FACTORY_ADDRESS);
+    const res = await factory.setWhitelist(modulefactory.address, 1);
     //console.log(res);
 }

@@ -35,6 +35,7 @@ contract ERC20StakingModule is IStakingModule {
 
     /**
      * @param token_ the token that will be rewarded
+     * @param factory_ address of module factory
      */
     constructor(address token_, address factory_) {
         _token = IERC20(token_);

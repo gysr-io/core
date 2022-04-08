@@ -1,4 +1,4 @@
-// unit tests for ERC20CompetitiveRewardModule
+// unit tests for ERC20BaseRewardModule
 
 const { accounts, contract } = require('@openzeppelin/test-environment');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');
@@ -48,7 +48,6 @@ describe('ERC20BaseRewardModule', function () {
         factory,
         { from: owner }
       );
-      //await this.module.transferControl(controller, { from: owner });
     });
 
     describe('when not approved', function () {

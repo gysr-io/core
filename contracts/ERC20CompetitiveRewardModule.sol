@@ -316,28 +316,30 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
             (unlockedShares * gysrWeightedShareSeconds) /
                 (totalStakingShareSeconds + gysrWeightedShareSeconds);
 
-        // reward
-        if (rewardShares > 0) {
-            _distribute(user, address(_token), rewardShares);
-
-            // update usage
-            uint256 ratio;
-            if (spent > 0) {
-                vested = spent;
-                emit GysrSpent(user, spent);
-                emit GysrVested(user, vested);
-                ratio = ((bonus - 10**DECIMALS) * 10**DECIMALS) / bonus;
-            }
-            uint256 weight =
-                (shareSeconds * 10**DECIMALS) /
-                    (totalStakingShareSeconds + shareSeconds);
-            _usage =
-                _usage -
-                (weight * _usage) /
-                10**DECIMALS +
-                (weight * ratio) /
-                10**DECIMALS;
+        if (rewardShares == 0) {
+            return (0, 0);
         }
+
+        // reward
+        _distribute(user, address(_token), rewardShares);
+
+        // update usage
+        uint256 ratio;
+        if (spent > 0) {
+            vested = spent;
+            emit GysrSpent(user, spent);
+            emit GysrVested(user, vested);
+            ratio = ((bonus - 10**DECIMALS) * 10**DECIMALS) / bonus;
+        }
+        uint256 weight =
+            (shareSeconds * 10**DECIMALS) /
+                (totalStakingShareSeconds + shareSeconds);
+        _usage =
+            _usage -
+            (weight * _usage) /
+            10**DECIMALS +
+            (weight * ratio) /
+            10**DECIMALS;
     }
 
     /**
@@ -373,6 +375,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
         while (sharesLeftToBurn > 0) {
             Stake storage lastStake = userStakes[userStakes.length - 1];
             uint256 stakeTime = block.timestamp - lastStake.timestamp;
+            require(stakeTime > 0, "crm3");
 
             uint256 bonus = timeBonus(stakeTime);
 

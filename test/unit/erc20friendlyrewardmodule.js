@@ -1038,6 +1038,7 @@ describe('ERC20FriendlyRewardModule', function () {
         this.aliceExpectedReward += this.secondClaimReward
         // claim
         await this.module.claim(alice, alice, shares(150), [], { from: owner })
+        await time.increase(new BN(1));
         this.res = await this.module.claim(alice, alice, shares(200), [], { from: owner });
         this.t3 = await this.module.lastUpdated();
       });

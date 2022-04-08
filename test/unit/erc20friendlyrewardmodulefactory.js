@@ -1,4 +1,4 @@
-// test module for ERC20StakingModuleFactory
+// test module for ERC20FriendlyRewardModuleFactory
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');

@@ -226,8 +226,8 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
 
     /**
      * @dev private method to process GYSR spending and vesting
-     * @param spent number of tokens to unstake
-     * @param vested data passed to staking module
+     * @param spent number of tokens spent by user
+     * @param vested number of tokens vested
      */
     function _processGysr(uint256 spent, uint256 vested) private {
         // spending

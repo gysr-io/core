@@ -874,6 +874,9 @@ describe('ERC20CompetitiveRewardModule', function () {
         await this.module.claim(alice, alice, shares(150), data0, { from: owner });
         this.remainder = fromFixedPointBigNumber(await this.module.totalUnlocked(), 10, DECIMALS);
 
+        // advance time
+        await time.increase(new BN(1));
+
         // encode gysr amount as bytes
         const data1 = web3.eth.abi.encodeParameter('uint256', tokens(5).toString());
 

@@ -1,4 +1,4 @@
-// test module for MathUtils
+// test module for GysrUtils
 
 const { accounts, contract } = require('@openzeppelin/test-environment');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');

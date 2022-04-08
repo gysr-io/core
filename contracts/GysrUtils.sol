@@ -1,5 +1,5 @@
 /*
-GYSRUtils
+GysrUtils
 
 https://github.com/gysr-io/core
 

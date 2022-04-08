@@ -1,4 +1,4 @@
-// unit tests for ERC20StakingModuleInfo library
+// unit tests for ERC721StakingModuleInfo library
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
 const { BN, time } = require('@openzeppelin/test-helpers');

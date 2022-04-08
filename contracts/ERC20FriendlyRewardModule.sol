@@ -215,6 +215,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         uint256 timeVestingCoeff;
         while (sharesLeftToBurn > 0) {
             Stake storage lastStake = userStakes[userStakes.length - 1];
+            require(lastStake.timestamp < block.timestamp, "frm3");
 
             if (lastStake.shares <= sharesLeftToBurn) {
                 // fully redeem a past stake

@@ -59,7 +59,7 @@ interface IPool {
 
     /**
      * @notice stake asset and begin earning rewards
-     * @param amount number of tokens to unstake
+     * @param amount number of tokens to stake
      * @param stakingdata data passed to staking module
      * @param rewarddata data passed to reward module
      */

@@ -34,6 +34,7 @@ contract ERC721StakingModule is IStakingModule {
 
     /**
      * @param token_ the token that will be rewarded
+     * @param factory_ address of module factory
      */
     constructor(address token_, address factory_) {
         require(IERC165(token_).supportsInterface(0x80ac58cd), "smn1");

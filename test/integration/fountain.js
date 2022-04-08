@@ -1,4 +1,4 @@
-// integrations tests for "Fountain" Pool
+// integration tests for "Fountain" Pool
 // made up of ERC20StakingModule and ERC20FriendlyRewardModule
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
@@ -25,6 +25,7 @@ const ERC20FriendlyRewardModuleFactory = contract.fromArtifact('ERC20FriendlyRew
 const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
 const TestToken = contract.fromArtifact('TestToken');
 const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
+const TestStakeUnstake = contract.fromArtifact('TestStakeUnstake');
 
 // need decent tolerance to account for potential timing error
 const TOKEN_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
@@ -1537,6 +1538,47 @@ describe('Fountain integration', function () {
 
       it('should return all staking token to user balance', async function () {
         expect(await this.stk.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
+      });
+
+    });
+
+  });
+
+  describe('usage manipulation', function () {
+
+    beforeEach('staking and holding', async function () {
+      // funding and approval
+      await this.stk.transfer(alice, tokens(10000), { from: org });
+      await this.stk.transfer(bob, tokens(1000), { from: org });
+      await this.stk.approve(this.staking.address, tokens(100000), { from: bob });
+      await this.gysr.transfer(bob, tokens(10), { from: org });
+      await this.gysr.approve(this.pool.address, tokens(100000), { from: bob });
+
+      // bob stakes 100 tokens and applies a GYSR multiplier
+      const data = web3.eth.abi.encodeParameter('uint256', tokens(10).toString());
+      await this.pool.stake(tokens(100), [], data, { from: bob });
+
+      // advance time
+      await time.increaseTo(this.t0.add(days(100)));
+
+      // setup proxy contract
+      this.proxy = await TestStakeUnstake.new({ from: alice });
+      await this.proxy.target(this.pool.address, { from: alice });
+      await this.stk.approve(this.proxy.address, tokens(100000), { from: alice });
+      await this.proxy.deposit(this.stk.address, tokens(10000), { from: alice });
+    });
+
+    describe('when proxy attempts stake-unstake', function () {
+
+      it('should block unstake and revert', async function () {
+        //const res = await this.proxy.execute(tokens(10000), { from: alice });
+        //console.log(res.logs[0].args);
+        //console.log(res.logs[1].args);
+        //console.log(res.logs[2].args);
+        await expectRevert(
+          this.proxy.execute(tokens(10000), { from: alice }),
+          'frm3'
+        );
       });
 
     });

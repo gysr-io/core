@@ -1,4 +1,4 @@
-// integrations tests for "Aquarium" Pool
+// integration tests for "Aquarium" Pool
 // made up of ERC721StakingModule and ERC20FriendlyRewardModule
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');

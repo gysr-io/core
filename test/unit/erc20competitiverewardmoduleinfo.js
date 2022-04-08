@@ -1,4 +1,4 @@
-// unit tests for ERC20CompetitiveRewardInfo library
+// unit tests for ERC20CompetitiveRewardModuleInfo library
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');

@@ -1,4 +1,4 @@
-// unit tests for ERC20StakingModule
+// unit tests for ERC721StakingModule
 
 const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');
