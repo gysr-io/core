@@ -73,11 +73,35 @@ describe('ERC20CompetitiveRewardModuleInfo', function () {
 
     });
 
+    describe('when getting multi token info', function () {
+      beforeEach(async function () {
+        this.res = await this.info.tokens(this.module.address);
+      });
+
+      it('should return reward token address as first argument at zero index', async function () {
+        expect(this.res[0][0]).to.equal(this.token.address);
+      });
+
+      it('should return reward token name as second argument at zero index', async function () {
+        expect(this.res[1][0]).to.equal("TestToken");
+      });
+
+      it('should return reward token symbol as third argument at zero index', async function () {
+        expect(this.res[2][0]).to.equal("TKN");
+      });
+
+      it('should return reward token decimals as fourth argument at zero index', async function () {
+        expect(this.res[3][0]).to.be.bignumber.equal(new BN(18));
+      });
+
+    });
+
+
     describe('when user previews reward', function () {
 
       it('should revert', async function () {
         await expectRevert(
-          this.info.rewards(this.module.address, alice, 0, 0),
+          this.info.preview(this.module.address, alice, 0, 0),
           'crmi1'  // shares must be greater than zero
         );
       });
@@ -180,7 +204,7 @@ describe('ERC20CompetitiveRewardModuleInfo', function () {
 
       it('should revert', async function () {
         await expectRevert(
-          this.info.rewards(this.module.address, alice, shares(201), 0),
+          this.info.preview(this.module.address, alice, shares(201), 0),
           'crmi2'  // shares greater than user position
         );
       });
@@ -191,7 +215,7 @@ describe('ERC20CompetitiveRewardModuleInfo', function () {
 
       beforeEach(async function () {
         // preview rewards
-        this.res = await this.info.rewards(this.module.address, alice, shares(200), tokens(1));
+        this.res = await this.info.preview(this.module.address, alice, shares(200), tokens(1));
       });
 
       it('should return expected reward amount', async function () {

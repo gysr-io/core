@@ -1,12 +1,23 @@
 # GYSR core
 
-This repository contains the Solidity contracts for GYSR core, token, and Pool factory.
+This repository contains the Solidity contracts for the GYSR core procotol, including modular pools, factory system, and token.
 
-For more information on the project, including whitepapers, audits, and other resources,
+For more information on the project, whitepapers, audits, and other resources,
 see [gysr.io](https://www.gysr.io/)
 
 
-## Setup
+## Install
+
+To use the core contracts, interfaces, libraries, or ABIs in your own project
+
+```
+npm install @gysr/core
+```
+
+See the [documentation](https://docs.gysr.io/developers) to learn more about interacting with the GYSR protocol.
+
+
+## Development
 
 Both **Node.js** and **npm** are required for package management and testing. See instructions
 for installation [here](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm).

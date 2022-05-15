@@ -1244,9 +1244,6 @@ describe('Geyser integration', function () {
         // encode gysr amount as bytes
         const data = web3.eth.abi.encodeParameter('uint256', tokens(5).toString());
 
-        // advance last 30 days
-        await time.increaseTo(this.t0.add(days(100)));
-
         // claim all
         this.res = await this.pool.claim(tokens(200), [], data, { from: alice });
       });

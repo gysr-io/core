@@ -1,0 +1,28 @@
+# github action to setup node environment, install dependencies, and run the GYSR core test suite with Truffle
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 10.x
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile solidity contracts
+        run: npx truffle compile
+
+      - name: Run truffle tests
+        run: npx mocha --exit --timeout 5000 --recursive

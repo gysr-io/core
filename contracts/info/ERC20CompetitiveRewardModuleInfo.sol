@@ -24,6 +24,31 @@ library ERC20CompetitiveRewardModuleInfo {
     using GysrUtils for uint256;
 
     /**
+     * @notice get all token metadata
+     * @param module address of reward module
+     * @return addresses_
+     * @return names_
+     * @return symbols_
+     * @return decimals_
+     */
+    function tokens(address module)
+        external
+        view
+        returns (
+            address[] memory addresses_,
+            string[] memory names_,
+            string[] memory symbols_,
+            uint8[] memory decimals_
+        )
+    {
+        addresses_ = new address[](1);
+        names_ = new string[](1);
+        symbols_ = new string[](1);
+        decimals_ = new uint8[](1);
+        (addresses_[0], names_[0], symbols_[0], decimals_[0]) = token(module);
+    }
+
+    /**
      * @notice convenience function to get token metadata in a single call
      * @param module address of reward module
      * @return address
@@ -47,6 +72,22 @@ library ERC20CompetitiveRewardModuleInfo {
     }
 
     /**
+     * @notice generic function to get pending reward balances
+     * @param module address of reward module
+     * @param addr account address of interest for preview
+     * @param shares number of shares that would be used
+     * @return rewards_ estimated reward balances
+     */
+    function rewards(
+        address module,
+        address addr,
+        uint256 shares
+    ) public view returns (uint256[] memory rewards_) {
+        rewards_ = new uint256[](1);
+        (rewards_[0], , ) = preview(module, addr, shares, 0);
+    }
+
+    /**
      * @notice preview estimated rewards
      * @param module address of reward module
      * @param addr account address of interest for preview
@@ -56,7 +97,7 @@ library ERC20CompetitiveRewardModuleInfo {
      * @return estimated time multiplier
      * @return estimated gysr multiplier
      */
-    function rewards(
+    function preview(
         address module,
         address addr,
         uint256 shares,
