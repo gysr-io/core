@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "./interfaces/IPoolFactory.sol";
 import "./interfaces/IModuleFactory.sol";
@@ -25,14 +25,11 @@ import "./Pool.sol";
  * creation of underlying staking and reward modules. This primary factory
  * calls each module factory and assembles the overall Pool contract.
  *
- * this contract also manages various privileged platform settings including
- * treasury address, fee amount, and module factory whitelist.
+ * this contract also manages the module factory whitelist.
  */
 contract PoolFactory is IPoolFactory, OwnerController {
     // events
     event PoolCreated(address indexed user, address pool);
-    event FeeUpdated(uint256 previous, uint256 updated);
-    event TreasuryUpdated(address previous, address updated);
     event WhitelistUpdated(
         address indexed factory,
         uint256 previous,
@@ -40,58 +37,60 @@ contract PoolFactory is IPoolFactory, OwnerController {
     );
 
     // types
-    enum ModuleFactoryType {Unknown, Staking, Reward}
-
-    // constants
-    uint256 public constant MAX_FEE = 20 * 10**16; // 20%
+    enum ModuleFactoryType {
+        Unknown,
+        Staking,
+        Reward
+    }
 
     // fields
-    mapping(address => bool) public map;
-    address[] public list;
-    address private _gysr;
-    address private _treasury;
-    uint256 private _fee;
+    mapping(address => bool) public override map;
+    address[] public override list;
+    address private immutable _gysr;
+    address private immutable _config;
     mapping(address => ModuleFactoryType) public whitelist;
 
     /**
      * @param gysr_ address of GYSR token
+     * @param config_ address of configuration contract
      */
-    constructor(address gysr_, address treasury_) {
+    constructor(address gysr_, address config_) {
         _gysr = gysr_;
-        _treasury = treasury_;
-        _fee = MAX_FEE;
+        _config = config_;
     }
 
     /**
-     * @notice create a new Pool
-     * @param staking address of factory that will be used to create staking module
-     * @param reward address of factory that will be used to create reward module
-     * @param stakingdata construction data for staking module factory
-     * @param rewarddata construction data for reward module factory
-     * @return address of newly created Pool
+     * @inheritdoc IPoolFactory
      */
     function create(
         address staking,
         address reward,
         bytes calldata stakingdata,
         bytes calldata rewarddata
-    ) external returns (address) {
+    ) external override returns (address) {
         // validate
         require(whitelist[staking] == ModuleFactoryType.Staking, "f1");
         require(whitelist[reward] == ModuleFactoryType.Reward, "f2");
 
         // create modules
-        address stakingModule =
-            IModuleFactory(staking).createModule(stakingdata);
-        address rewardModule = IModuleFactory(reward).createModule(rewarddata);
+        address stakingModule = IModuleFactory(staking).createModule(
+            _config,
+            stakingdata
+        );
+        address rewardModule = IModuleFactory(reward).createModule(
+            _config,
+            rewarddata
+        );
 
         // create pool
-        Pool pool = new Pool(stakingModule, rewardModule, _gysr, address(this));
+        Pool pool = new Pool(stakingModule, rewardModule, _gysr, _config);
 
         // set access
         IStakingModule(stakingModule).transferOwnership(address(pool));
         IRewardModule(rewardModule).transferOwnership(address(pool));
-        pool.transferControl(msg.sender); // this also sets controller for modules
+        pool.transferControl(msg.sender);
+        pool.transferControlStakingModule(msg.sender);
+        pool.transferControlRewardModule(msg.sender);
         pool.transferOwnership(msg.sender);
 
         // bookkeeping
@@ -101,41 +100,6 @@ contract PoolFactory is IPoolFactory, OwnerController {
         // output
         emit PoolCreated(msg.sender, address(pool));
         return address(pool);
-    }
-
-    /**
-     * @inheritdoc IPoolFactory
-     */
-    function treasury() external view override returns (address) {
-        return _treasury;
-    }
-
-    /**
-     * @inheritdoc IPoolFactory
-     */
-    function fee() external view override returns (uint256) {
-        return _fee;
-    }
-
-    /**
-     * @notice update the GYSR treasury address
-     * @param treasury_ new value for treasury address
-     */
-    function setTreasury(address treasury_) external {
-        requireController();
-        emit TreasuryUpdated(_treasury, treasury_);
-        _treasury = treasury_;
-    }
-
-    /**
-     * @notice update the global GYSR spending fee
-     * @param fee_ new value for GYSR spending fee
-     */
-    function setFee(uint256 fee_) external {
-        requireController();
-        require(fee_ <= MAX_FEE, "f3");
-        emit FeeUpdated(_fee, fee_);
-        _fee = fee_;
     }
 
     /**

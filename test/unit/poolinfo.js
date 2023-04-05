@@ -1,6 +1,6 @@
 // test module for PoolInfo contract
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
@@ -9,31 +9,32 @@ const {
   bonus,
   days,
   shares,
-  toFixedPointBigNumber,
-  fromFixedPointBigNumber,
+  e6,
+  bytes32,
   DECIMALS,
 } = require('../util/helper');
 
-const Pool = contract.fromArtifact('Pool');
-const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
-const ERC721StakingModule = contract.fromArtifact('ERC721StakingModule');
+const Pool = artifacts.require('Pool');
+const ERC20StakingModule = artifacts.require('ERC20StakingModule');
+const ERC721StakingModule = artifacts.require('ERC721StakingModule');
 
-const ERC20StakingModuleInfo = contract.fromArtifact('ERC20StakingModuleInfo');
-const ERC721StakingModuleInfo = contract.fromArtifact('ERC721StakingModuleInfo');
-const ERC20CompetitiveRewardModule = contract.fromArtifact('ERC20CompetitiveRewardModule');
-const ERC20CompetitiveRewardModuleInfo = contract.fromArtifact('ERC20CompetitiveRewardModuleInfo');
-const ERC20FriendlyRewardModuleInfo = contract.fromArtifact('ERC20FriendlyRewardModuleInfo');
-const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
+const ERC20StakingModuleInfo = artifacts.require('ERC20StakingModuleInfo');
+const ERC721StakingModuleInfo = artifacts.require('ERC721StakingModuleInfo');
+const ERC20CompetitiveRewardModule = artifacts.require('ERC20CompetitiveRewardModule');
+const ERC20CompetitiveRewardModuleInfo = artifacts.require('ERC20CompetitiveRewardModuleInfo');
+const ERC20FriendlyRewardModuleInfo = artifacts.require('ERC20FriendlyRewardModuleInfo');
+const ERC20FriendlyRewardModule = artifacts.require('ERC20FriendlyRewardModule');
 
-const PoolFactory = contract.fromArtifact('PoolFactory');
-const GeyserToken = contract.fromArtifact('GeyserToken');
-const PoolInfo = contract.fromArtifact('PoolInfo');
-const TestToken = contract.fromArtifact('TestToken');
-const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
-const TestERC721 = contract.fromArtifact('TestERC721');
+const PoolFactory = artifacts.require('PoolFactory');
+const GeyserToken = artifacts.require('GeyserToken');
+const Configuration = artifacts.require('Configuration');
+const PoolInfo = artifacts.require('PoolInfo');
+const TestToken = artifacts.require('TestToken');
+const TestLiquidityToken = artifacts.require('TestLiquidityToken');
+const TestERC721 = artifacts.require('TestERC721');
 
 describe('PoolInfo', function () {
-  const [
+  let
     owner,
     org,
     treasury,
@@ -43,12 +44,27 @@ describe('PoolInfo', function () {
     friendlyFactory,
     alice,
     bob,
-    other,
-  ] = accounts;
+    other;
+  before(async function () {
+    [
+      owner,
+      org,
+      treasury,
+      erc20stakingFactory,
+      erc721stakingFactory,
+      competitiveFactory,
+      friendlyFactory,
+      alice,
+      bob,
+      other,
+    ] = await web3.eth.getAccounts();
+  });
+
 
   beforeEach('setup', async function () {
     // base setup
     this.gysr = await GeyserToken.new({ from: org });
+    this.config = await Configuration.new({ from: org });
     this.factory = await PoolFactory.new(this.gysr.address, treasury, { from: org });
     this.rew = await TestToken.new({ from: org });
     this.stk = await TestLiquidityToken.new({ from: org });
@@ -71,6 +87,7 @@ describe('PoolInfo', function () {
       bonus(0.5),
       bonus(2.0),
       days(90),
+      this.config.address,
       competitiveFactory,
       { from: owner }
     );
@@ -80,7 +97,7 @@ describe('PoolInfo', function () {
       this.staking.address,
       this.reward.address,
       this.gysr.address,
-      this.factory.address,
+      this.config.address,
       { from: owner }
     );
     await this.staking.transferOwnership(this.pool.address, { from: owner });
@@ -117,7 +134,7 @@ describe('PoolInfo', function () {
 
   describe('when user has 0 shares', function () {
     beforeEach(async function () {
-      this.res = await this.info.rewards(this.pool.address, alice);
+      this.res = await this.info.rewards(this.pool.address, alice, [], []);
     });
 
     it('should return zero', async function () {
@@ -148,10 +165,10 @@ describe('PoolInfo', function () {
     });
 
     it('should return expected reward amount', async function () {
-      const rewards = await this.info.rewards(this.pool.address, alice);
+      const rewards = await this.info.rewards(this.pool.address, alice, [], []);
       const preview = await this.erc20competitiverewardmoduleinfo.preview(
         this.reward.address,
-        alice,
+        bytes32(alice),
         shares(100),
         0
       );
@@ -174,6 +191,7 @@ describe('PoolInfo', function () {
         this.rew.address,
         bonus(0.0),
         days(0),
+        this.config.address,
         friendlyFactory,
         { from: owner }
       );
@@ -183,7 +201,7 @@ describe('PoolInfo', function () {
         this.staking.address,
         this.reward.address,
         this.gysr.address,
-        this.factory.address,
+        this.config.address,
         { from: owner }
       );
       await this.staking.transferOwnership(this.pool.address, { from: owner });
@@ -210,10 +228,10 @@ describe('PoolInfo', function () {
     });
 
     it('should return expected reward amount', async function () {
-      const rewards = await this.info.rewards(this.pool.address, alice);
+      const rewards = await this.info.rewards(this.pool.address, alice, [], []);
       const preview = await this.erc20friendlyrewardmoduleinfo.preview(
         this.reward.address,
-        alice,
+        bytes32(alice),
         shares(100)
       );
       expect(rewards[0]).to.be.bignumber.equal(preview[0]);
@@ -237,6 +255,7 @@ describe('PoolInfo', function () {
         bonus(0.5),
         bonus(2.0),
         days(90),
+        this.config.address,
         competitiveFactory,
         { from: owner }
       );
@@ -274,11 +293,11 @@ describe('PoolInfo', function () {
     });
 
     it('should return expected reward amount', async function () {
-      const rewards = await this.info.rewards(this.pool.address, alice);
+      const rewards = await this.info.rewards(this.pool.address, alice, [], []);
       const preview = await this.erc20competitiverewardmoduleinfo.preview(
         this.reward.address,
-        alice,
-        tokens(3),
+        bytes32(alice),
+        e6(3),
         0
       );
       expect(rewards[0]).to.be.bignumber.equal(preview[0]);

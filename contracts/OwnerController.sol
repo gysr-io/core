@@ -6,7 +6,9 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
+
+import "./interfaces/IOwnerController.sol";
 
 /**
  * @title Owner controller
@@ -23,7 +25,7 @@ pragma solidity 0.8.4;
  * Original contract here:
  * https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol
  */
-contract OwnerController {
+contract OwnerController is IOwnerController {
     address private _owner;
     address private _controller;
 
@@ -47,14 +49,14 @@ contract OwnerController {
     /**
      * @dev Returns the address of the current owner.
      */
-    function owner() public view returns (address) {
+    function owner() public view override returns (address) {
         return _owner;
     }
 
     /**
      * @dev Returns the address of the current controller.
      */
-    function controller() public view returns (address) {
+    function controller() public view override returns (address) {
         return _controller;
     }
 
@@ -93,7 +95,7 @@ contract OwnerController {
      * include renouncing ownership by transferring to the zero address.
      * Can only be called by the current owner.
      */
-    function transferOwnership(address newOwner) public virtual {
+    function transferOwnership(address newOwner) public virtual override {
         requireOwner();
         require(newOwner != address(0), "oc3");
         emit OwnershipTransferred(_owner, newOwner);
@@ -104,7 +106,7 @@ contract OwnerController {
      * @dev Transfers control of the contract to a new account (`newController`).
      * Can only be called by the owner.
      */
-    function transferControl(address newController) public virtual {
+    function transferControl(address newController) public virtual override {
         requireOwner();
         require(newController != address(0), "oc4");
         emit ControlTransferred(_controller, newController);

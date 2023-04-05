@@ -1,6 +1,6 @@
 // unit tests for ERC721StakingModuleInfo library
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
@@ -10,14 +10,16 @@ const {
   DECIMALS
 } = require('../util/helper');
 
-const ERC721StakingModule = contract.fromArtifact('ERC721StakingModule');
-const TestERC721 = contract.fromArtifact('TestERC721');
-const ERC721StakingModuleInfo = contract.fromArtifact('ERC721StakingModuleInfo');
-
+const ERC721StakingModule = artifacts.require('ERC721StakingModule');
+const TestERC721 = artifacts.require('TestERC721');
+const ERC721StakingModuleInfo = artifacts.require('ERC721StakingModuleInfo');
 
 
 describe('ERC721StakingModuleInfo', function () {
-  const [org, owner, controller, bob, alice, factory] = accounts;
+  let org, owner, alice, bob, other, factory;
+  before(async function () {
+    [org, owner, alice, bob, other, factory] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.token = await TestERC721.new({ from: org });
@@ -71,6 +73,21 @@ describe('ERC721StakingModuleInfo', function () {
 
     });
 
+    describe('when user gets positions', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.positions(this.module.address, alice, []);
+      });
+
+      it('should return empty list of accounts', async function () {
+        expect(this.res.accounts_.length).eq(0);
+      });
+
+      it('should return empty list of shares', async function () {
+        expect(this.res.accounts_.length).eq(0);
+      });
+
+    });
 
     describe('when getting shares per token', function () {
 
@@ -78,9 +95,9 @@ describe('ERC721StakingModuleInfo', function () {
         this.res = await this.info.sharesPerToken(this.module.address);
       });
 
-      it('should return 1e18', async function () {
+      it('should return 1e6', async function () {
         expect(this.res).to.be.bignumber.equal(
-          toFixedPointBigNumber(1, 10, 18).mul(toFixedPointBigNumber(1, 10, 18))
+          toFixedPointBigNumber(1, 10, 6).mul(toFixedPointBigNumber(1, 10, 18))
         );
       });
 
@@ -125,7 +142,7 @@ describe('ERC721StakingModuleInfo', function () {
       });
 
       it('should return full share balance', async function () {
-        expect(this.res).to.be.bignumber.equal(toFixedPointBigNumber(3, 10, 18));
+        expect(this.res).to.be.bignumber.equal(toFixedPointBigNumber(3, 10, 6));
       });
 
     });
@@ -137,7 +154,7 @@ describe('ERC721StakingModuleInfo', function () {
       });
 
       it('should return expected number of shares', async function () {
-        expect(this.res).to.be.bignumber.equal(toFixedPointBigNumber(2, 10, 18));
+        expect(this.res).to.be.bignumber.equal(toFixedPointBigNumber(2, 10, 6));
       });
 
     });
@@ -150,7 +167,7 @@ describe('ERC721StakingModuleInfo', function () {
 
       it('should return 1e18', async function () {
         expect(this.res).to.be.bignumber.equal(
-          toFixedPointBigNumber(1, 10, 18).mul(toFixedPointBigNumber(1, 10, 18))
+          toFixedPointBigNumber(1, 10, 18).mul(toFixedPointBigNumber(1, 10, 6))
         );
       });
 

@@ -1,14 +1,17 @@
 // unit tests for OwnerController contract
 
-const { accounts, contract } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
-const OwnerController = contract.fromArtifact('OwnerController');
+const OwnerController = artifacts.require('OwnerController');
 
 
 describe('OwnerController', function () {
-  const [owner, controller, bob, alice] = accounts;
+  let owner, controller, bob, alice;
+  before(async function () {
+    [owner, controller, bob, alice] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.contract = await OwnerController.new({ from: owner });

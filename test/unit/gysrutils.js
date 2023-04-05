@@ -1,6 +1,6 @@
 // test module for GysrUtils
 
-const { accounts, contract } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 const {
@@ -10,7 +10,7 @@ const {
   reportGas
 } = require('../util/helper');
 
-const TestGysrUtils = contract.fromArtifact('TestGysrUtils');
+const TestGysrUtils = artifacts.require('TestGysrUtils');
 
 // tolerance
 const BONUS_DELTA = 0.000001;

@@ -1,17 +1,20 @@
 // test module for ERC721StakingModuleFactory
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
 const { reportGas } = require('../util/helper');
 
-const ERC721StakingModule = contract.fromArtifact('ERC721StakingModule');
-const ERC721StakingModuleFactory = contract.fromArtifact('ERC721StakingModuleFactory');
-const TestERC721 = contract.fromArtifact('TestERC721');
+const ERC721StakingModule = artifacts.require('ERC721StakingModule');
+const ERC721StakingModuleFactory = artifacts.require('ERC721StakingModuleFactory');
+const TestERC721 = artifacts.require('TestERC721');
 
 describe('ERC721StakingModuleFactory', function () {
-  const [owner, org, alice] = accounts;
+  let org, owner, alice, config;
+  before(async function () {
+    [org, owner, alice, config] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.factory = await ERC721StakingModuleFactory.new({ from: org });
@@ -23,7 +26,7 @@ describe('ERC721StakingModuleFactory', function () {
     it('should fail', async function () {
       const data = "0x0de0b6b3a7640000"; // not a full 32 bytes
       await expectRevert(
-        this.factory.createModule(data, { from: owner }),
+        this.factory.createModule(config, data, { from: owner }),
         'smnf1' // ERC721StakingModuleFactory: invalid data
       );
     });
@@ -36,7 +39,7 @@ describe('ERC721StakingModuleFactory', function () {
       const data = web3.eth.abi.encodeParameter('address', this.token.address);
 
       // create module with factory
-      this.res = await this.factory.createModule(data, { from: owner });
+      this.res = await this.factory.createModule(config, data, { from: owner });
       this.addr = this.res.logs.filter(l => l.event === 'ModuleCreated')[0].args.module;
       this.module = await ERC721StakingModule.at(this.addr);
     });

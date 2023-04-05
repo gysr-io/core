@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "../interfaces/IPoolInfo.sol";
 import "../interfaces/IPool.sol";
@@ -30,17 +30,9 @@ contract PoolInfo is IPoolInfo, OwnerController {
     /**
      * @inheritdoc IPoolInfo
      */
-    function modules(address pool)
-        public
-        view
-        override
-        returns (
-            address,
-            address,
-            address,
-            address
-        )
-    {
+    function modules(
+        address pool
+    ) public view override returns (address, address, address, address) {
         IPool p = IPool(pool);
         IStakingModule s = IStakingModule(p.stakingModule());
         IRewardModule r = IRewardModule(p.rewardModule());
@@ -59,34 +51,43 @@ contract PoolInfo is IPoolInfo, OwnerController {
     /**
      * @inheritdoc IPoolInfo
      */
-    function rewards(address pool, address addr)
-        public
-        view
-        override
-        returns (uint256[] memory rewards_)
-    {
+    function rewards(
+        address pool,
+        address addr,
+        bytes calldata stakingdata,
+        bytes calldata rewarddata
+    ) public view override returns (uint256[] memory rewards_) {
         address stakingModule;
         address rewardModule;
-        address stakingModuleType;
-        address rewardModuleType;
+        IStakingModuleInfo stakingModuleInfo;
+        IRewardModuleInfo rewardModuleInfo;
+        {
+            address stakingModuleType;
+            address rewardModuleType;
+            (
+                stakingModule,
+                rewardModule,
+                stakingModuleType,
+                rewardModuleType
+            ) = modules(pool);
 
-        (
-            stakingModule,
-            rewardModule,
-            stakingModuleType,
-            rewardModuleType
-        ) = modules(pool);
+            stakingModuleInfo = IStakingModuleInfo(registry[stakingModuleType]);
+            rewardModuleInfo = IRewardModuleInfo(registry[rewardModuleType]);
+        }
 
-        IStakingModuleInfo stakingModuleInfo =
-            IStakingModuleInfo(registry[stakingModuleType]);
-        IRewardModuleInfo rewardModuleInfo =
-            IRewardModuleInfo(registry[rewardModuleType]);
+        rewards_ = new uint256[](IPool(pool).rewardTokens().length);
 
-        uint256 shares = stakingModuleInfo.shares(stakingModule, addr, 0);
+        (bytes32[] memory accounts, uint256[] memory shares) = stakingModuleInfo
+            .positions(stakingModule, addr, stakingdata);
 
-        if (shares == 0)
-            return new uint256[](IPool(pool).rewardTokens().length);
-
-        return rewardModuleInfo.rewards(rewardModule, addr, shares);
+        for (uint256 i; i < accounts.length; ++i) {
+            uint256[] memory r = rewardModuleInfo.rewards(
+                rewardModule,
+                accounts[i],
+                shares[i],
+                rewarddata
+            );
+            for (uint256 j; j < r.length; ++j) rewards_[j] += r[j];
+        }
     }
 }

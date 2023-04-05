@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "./interfaces/IModuleFactory.sol";
 import "./ERC721StakingModule.sol";
@@ -24,7 +24,7 @@ contract ERC721StakingModuleFactory is IModuleFactory {
     /**
      * @inheritdoc IModuleFactory
      */
-    function createModule(bytes calldata data)
+    function createModule(address, bytes calldata data)
         external
         override
         returns (address)
@@ -35,7 +35,7 @@ contract ERC721StakingModuleFactory is IModuleFactory {
         // parse staking token
         address token;
         assembly {
-            token := calldataload(68)
+            token := calldataload(100)
         }
 
         // create module

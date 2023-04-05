@@ -1,6 +1,7 @@
 const { BN, time } = require('@openzeppelin/test-helpers');
-const { fromWei, toWei } = require('web3-utils')
+const { fromWei, toWei, padLeft, hexToBytes } = require('web3-utils');
 const { appendFileSync, existsSync, unlinkSync } = require('fs');
+const { parseBytes32String } = require('ethers/lib/utils');
 
 
 // same const used for GYSR, test token, and bonus value returns
@@ -15,10 +16,10 @@ const UNITMAP = {
   12: 'micro',
   15: 'milli',
   18: 'ether',
-  21: 'kether'
+  21: 'kether',
 };
 
-const GAS_REPORT = './gas_report.txt';
+const GAS_REPORT = './gas_report_legacy.txt';
 var gas_report_initialized = false;
 
 function tokens(x) {
@@ -37,6 +38,22 @@ function fromBonus(x) {
   return fromFixedPointBigNumber(x, 10, DECIMALS);
 }
 
+function e18(x) {
+  return toFixedPointBigNumber(x, 10, DECIMALS);
+}
+
+function fromE18(x) {
+  return fromFixedPointBigNumber(x, 10, DECIMALS);
+}
+
+function e6(x) {
+  return toFixedPointBigNumber(x, 10, 6);
+}
+
+function fromE6(x) {
+  return fromFixedPointBigNumber(x, 10, 6);
+}
+
 function days(x) {
   return new BN(60 * 60 * 24 * x);
 }
@@ -45,8 +62,16 @@ function shares(x) {
   return new BN(10 ** 6).mul(toFixedPointBigNumber(x, 10, DECIMALS));
 }
 
+function rate(x) {
+  return toFixedPointBigNumber(x, 10, DECIMALS);
+};
+
+function bytes32(address) {
+  return padLeft(address, 64).toLowerCase();
+}
+
 async function now() {
-  return time.latest()
+  return time.latest();
 }
 
 function toFixedPointBigNumber(x, base, decimal) {
@@ -101,6 +126,11 @@ function fromFixedPointBigNumber(x, base, decimal) {
   return value;
 }
 
+async function setupTime(t0, delta) {
+  // decrement target time by one second to setup for next tx
+  return time.increaseTo(t0.add(delta).sub(new BN(1)));
+}
+
 function reportGas(contract, method, description, tx) {
   if (!gas_report_initialized) {
     // reset
@@ -120,12 +150,19 @@ module.exports = {
   fromTokens,
   bonus,
   fromBonus,
+  e18,
+  fromE18,
+  e6,
+  fromE6,
   days,
   shares,
+  bytes32,
   now,
   toFixedPointBigNumber,
   fromFixedPointBigNumber,
+  rate,
   reportGas,
+  setupTime,
   DECIMALS,
-  FEE
+  FEE,
 };

@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
@@ -31,7 +31,9 @@ library ERC20CompetitiveRewardModuleInfo {
      * @return symbols_
      * @return decimals_
      */
-    function tokens(address module)
+    function tokens(
+        address module
+    )
         external
         view
         returns (
@@ -56,16 +58,9 @@ library ERC20CompetitiveRewardModuleInfo {
      * @return symbol
      * @return decimals
      */
-    function token(address module)
-        public
-        view
-        returns (
-            address,
-            string memory,
-            string memory,
-            uint8
-        )
-    {
+    function token(
+        address module
+    ) public view returns (address, string memory, string memory, uint8) {
         IRewardModule m = IRewardModule(module);
         IERC20Metadata tkn = IERC20Metadata(m.tokens()[0]);
         return (address(tkn), tkn.name(), tkn.symbol(), tkn.decimals());
@@ -74,23 +69,24 @@ library ERC20CompetitiveRewardModuleInfo {
     /**
      * @notice generic function to get pending reward balances
      * @param module address of reward module
-     * @param addr account address of interest for preview
+     * @param account bytes32 account of interest for preview
      * @param shares number of shares that would be used
      * @return rewards_ estimated reward balances
      */
     function rewards(
         address module,
-        address addr,
-        uint256 shares
+        bytes32 account,
+        uint256 shares,
+        bytes calldata
     ) public view returns (uint256[] memory rewards_) {
         rewards_ = new uint256[](1);
-        (rewards_[0], , ) = preview(module, addr, shares, 0);
+        (rewards_[0], , ) = preview(module, account, shares, 0);
     }
 
     /**
      * @notice preview estimated rewards
      * @param module address of reward module
-     * @param addr account address of interest for preview
+     * @param account bytes32 account of interest for preview
      * @param shares number of shares that would be unstaked
      * @param gysr number of GYSR tokens that would be applied
      * @return estimated reward
@@ -99,18 +95,10 @@ library ERC20CompetitiveRewardModuleInfo {
      */
     function preview(
         address module,
-        address addr,
+        bytes32 account,
         uint256 shares,
         uint256 gysr
-    )
-        public
-        view
-        returns (
-            uint256,
-            uint256,
-            uint256
-        )
-    {
+    ) public view returns (uint256, uint256, uint256) {
         ERC20CompetitiveRewardModule m = ERC20CompetitiveRewardModule(module);
 
         // get associated share seconds
@@ -118,7 +106,7 @@ library ERC20CompetitiveRewardModuleInfo {
         uint256 bonusShareSeconds;
         (rawShareSeconds, bonusShareSeconds) = userShareSeconds(
             module,
-            addr,
+            account,
             shares
         );
         if (rawShareSeconds == 0) {
@@ -128,16 +116,16 @@ library ERC20CompetitiveRewardModuleInfo {
         uint256 timeBonus = (bonusShareSeconds * 1e18) / rawShareSeconds;
 
         // apply gysr bonus
-        uint256 gysrBonus =
-            gysr.gysrBonus(shares, m.totalStakingShares(), m.usage());
+        uint256 gysrBonus = gysr.gysrBonus(
+            shares,
+            m.totalStakingShares(),
+            m.usage()
+        );
         bonusShareSeconds = (gysrBonus * bonusShareSeconds) / 1e18;
 
         // compute rewards based on expected updates
-        uint256 reward =
-            (unlocked(module) * bonusShareSeconds) /
-                (totalShareSeconds(module) +
-                    bonusShareSeconds -
-                    rawShareSeconds);
+        uint256 reward = (unlocked(module) * bonusShareSeconds) /
+            (totalShareSeconds(module) + bonusShareSeconds - rawShareSeconds);
 
         return (reward, timeBonus, gysrBonus);
     }
@@ -169,14 +157,14 @@ library ERC20CompetitiveRewardModuleInfo {
     /**
      * @notice compute user share seconds for given number of shares
      * @param module module contract address
-     * @param addr user address
+     * @param account user account
      * @param shares number of shares
      * @return raw share seconds
      * @return time bonus share seconds
      */
     function userShareSeconds(
         address module,
-        address addr,
+        bytes32 account,
         uint256 shares
     ) public view returns (uint256, uint256) {
         require(shares > 0, "crmi1");
@@ -187,13 +175,13 @@ library ERC20CompetitiveRewardModuleInfo {
         uint256 timeBonusShareSeconds;
 
         // compute first-in-last-out, time bonus weighted, share seconds
-        uint256 i = m.stakeCount(addr);
+        uint256 i = m.stakeCount(account);
         while (shares > 0) {
             require(i > 0, "crmi2");
             i -= 1;
             uint256 s;
             uint256 time;
-            (s, time) = m.stakes(addr, i);
+            (s, time) = m.stakes(account, i);
             time = block.timestamp - time;
 
             // only redeem partial stake if more shares left than needed to burn

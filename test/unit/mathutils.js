@@ -1,12 +1,12 @@
 // test module for MathUtils
 
-const { accounts, contract } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
 const { toFixedPointBigNumber, fromFixedPointBigNumber } = require('../util/helper');
 
-const MathUtils = contract.fromArtifact('MathUtils');
+const MathUtils = artifacts.require('MathUtils');
 
 
 describe('testing helpers (yes, meta tests...)', function () {

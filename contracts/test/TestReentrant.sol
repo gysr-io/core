@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC777/ERC777.sol";
 import "@openzeppelin/contracts/token/ERC777/IERC777Sender.sol";
@@ -114,7 +114,7 @@ contract TestReentrantProxy is IERC777Sender, ERC1820Implementer {
         } else if (_mode == 2) {
             pool.unstake(_amount, "", "");
         } else if (_mode == 3) {
-            pool.update();
+            pool.update("", "");
         }
     }
 }

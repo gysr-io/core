@@ -6,10 +6,10 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "./interfaces/IRewardModule.sol";
-import "./interfaces/IEvents.sol";
+import "./interfaces/IConfiguration.sol";
 import "./ERC20BaseRewardModule.sol";
 import "./GysrUtils.sol";
 
@@ -26,9 +26,10 @@ import "./GysrUtils.sol";
  */
 contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     using GysrUtils for uint256;
+    using TokenUtils for IERC20;
 
     // constants
-    uint256 public constant FULL_VESTING = 10**DECIMALS;
+    uint256 public constant FULL_VESTING = 1e18;
 
     // single stake by user
     struct Stake {
@@ -40,7 +41,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     }
 
     // mapping of user to all of their stakes
-    mapping(address => Stake[]) public stakes;
+    mapping(bytes32 => Stake[]) public stakes;
 
     // total shares without GYSR multiplier applied
     uint256 public totalRawStakingShares;
@@ -60,22 +61,27 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
 
     IERC20 private immutable _token;
     address private immutable _factory;
+    IConfiguration private immutable _config;
 
     /**
      * @param token_ the token that will be rewarded
      * @param vestingStart_ minimum ratio earned
      * @param vestingPeriod_ period (in seconds) over which investors vest to 100%
+     * @param config_ address for configuration contract
      * @param factory_ address of module factory
      */
     constructor(
         address token_,
         uint256 vestingStart_,
         uint256 vestingPeriod_,
+        address config_,
         address factory_
     ) {
+        require(token_ != address(0));
         require(vestingStart_ <= FULL_VESTING, "frm1");
 
         _token = IERC20(token_);
+        _config = IConfiguration(config_);
         _factory = factory_;
 
         vestingStart = vestingStart_;
@@ -128,27 +134,27 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
      * @inheritdoc IRewardModule
      */
     function stake(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
         uint256 shares,
         bytes calldata data
     ) external override onlyOwner returns (uint256, uint256) {
         _update();
-        return _stake(account, user, shares, data);
+        return _stake(account, sender, shares, data);
     }
 
     /**
      * @notice internal implementation of stake method
-     * @param account address of staking account
-     * @param user address of user
+     * @param account bytes32 id of staking account
+     * @param sender address of sender
      * @param shares number of new shares minted
      * @param data addtional data
      * @return amount of gysr spent
      * @return amount of gysr vested
      */
     function _stake(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
         uint256 shares,
         bytes calldata data
     ) internal returns (uint256, uint256) {
@@ -156,16 +162,17 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
 
         uint256 gysr;
         if (data.length == 32) {
-            assembly {
-                gysr := calldataload(164)
-            }
+            gysr = abi.decode(data, (uint256));
         }
 
-        uint256 bonus =
-            gysr.gysrBonus(shares, totalRawStakingShares + shares, _usage());
+        uint256 bonus = gysr.gysrBonus(
+            shares,
+            totalRawStakingShares + shares,
+            _usage()
+        );
 
         if (gysr > 0) {
-            emit GysrSpent(user, gysr);
+            emit GysrSpent(sender, gysr);
         }
 
         // update user staking info
@@ -175,7 +182,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
 
         // add new shares to global totals
         totalRawStakingShares += shares;
-        totalStakingShares += (shares * bonus) / 10**DECIMALS;
+        totalStakingShares += (shares * bonus) / 1e18;
 
         return (gysr, 0);
     }
@@ -184,28 +191,33 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
      * @inheritdoc IRewardModule
      */
     function unstake(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
+        address receiver,
         uint256 shares,
         bytes calldata
     ) external override onlyOwner returns (uint256, uint256) {
         _update();
-        return _unstake(account, user, shares);
+        return _unstake(account, sender, receiver, shares);
     }
 
     /**
      * @notice internal implementation of unstake
-     * @param account address of staking account
-     * @param user address of user
+     * @param account bytes32 of staking account
+     * @param sender address of sender
+     * @param receiver address of reward receiver
      * @param shares number of shares burned
      * @return amount of gysr spent
      * @return amount of gysr vested
      */
     function _unstake(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
+        address receiver,
         uint256 shares
     ) internal returns (uint256, uint256) {
+        // note: we assume shares has been validated upstream
+
         // redeem first-in-last-out
         uint256 sharesLeftToBurn = shares;
         Stake[] storage userStakes = stakes[account];
@@ -227,17 +239,15 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
                 );
 
                 timeVestingCoeff = timeVestingCoefficient(lastStake.timestamp);
-                rewardAmount +=
-                    (preVestingRewards * timeVestingCoeff) /
-                    10**DECIMALS;
+                rewardAmount += (preVestingRewards * timeVestingCoeff) / 1e18;
 
                 rewardDust +=
                     (preVestingRewards * (FULL_VESTING - timeVestingCoeff)) /
-                    10**DECIMALS;
+                    1e18;
 
                 totalStakingShares -=
                     (lastStake.shares * lastStake.bonus) /
-                    10**DECIMALS;
+                    1e18;
                 sharesLeftToBurn -= lastStake.shares;
                 gysrVested += lastStake.gysr;
                 userStakes.pop();
@@ -251,20 +261,18 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
                 );
 
                 timeVestingCoeff = timeVestingCoefficient(lastStake.timestamp);
-                rewardAmount +=
-                    (preVestingRewards * timeVestingCoeff) /
-                    10**DECIMALS;
+                rewardAmount += (preVestingRewards * timeVestingCoeff) / 1e18;
 
                 rewardDust +=
                     (preVestingRewards * (FULL_VESTING - timeVestingCoeff)) /
-                    10**DECIMALS;
+                    1e18;
 
                 totalStakingShares -=
                     (sharesLeftToBurn * lastStake.bonus) /
-                    10**DECIMALS;
+                    1e18;
 
-                uint256 partialVested =
-                    (sharesLeftToBurn * lastStake.gysr) / lastStake.shares;
+                uint256 partialVested = (sharesLeftToBurn * lastStake.gysr) /
+                    lastStake.shares;
                 gysrVested += partialVested;
                 lastStake.shares -= sharesLeftToBurn;
                 lastStake.gysr -= partialVested;
@@ -276,11 +284,11 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         totalRawStakingShares -= shares;
 
         if (rewardAmount > 0) {
-            _distribute(user, address(_token), rewardAmount);
+            _distribute(receiver, address(_token), rewardAmount);
         }
 
         if (gysrVested > 0) {
-            emit GysrVested(user, gysrVested);
+            emit GysrVested(sender, gysrVested);
         }
 
         return (0, gysrVested);
@@ -290,14 +298,15 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
      * @inheritdoc IRewardModule
      */
     function claim(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
+        address receiver,
         uint256 shares,
         bytes calldata data
     ) external override onlyOwner returns (uint256 spent, uint256 vested) {
         _update();
-        (, vested) = _unstake(account, user, shares);
-        (spent, ) = _stake(account, user, shares, data);
+        (, vested) = _unstake(account, sender, receiver, shares);
+        (spent, ) = _stake(account, sender, shares, data);
     }
 
     /**
@@ -313,8 +322,8 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         uint256 rewardTally
     ) internal view returns (uint256) {
         return
-            ((((rewardsPerStakedShare - rewardTally) * shares) / 10**DECIMALS) * // counteract rewardsPerStakedShare coefficient
-                bonus) / 10**DECIMALS; // counteract bonus coefficient
+            ((((rewardsPerStakedShare - rewardTally) * shares) / 1e18) *
+                bonus) / 1e18; // counteract rewardsPerStakedShare coefficient // counteract bonus coefficient
     }
 
     /**
@@ -322,11 +331,9 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
      * @param time epoch time at which the tokens were staked
      * @return vesting multiplier rewards
      */
-    function timeVestingCoefficient(uint256 time)
-        public
-        view
-        returns (uint256)
-    {
+    function timeVestingCoefficient(
+        uint256 time
+    ) public view returns (uint256) {
         if (vestingPeriod == 0) return FULL_VESTING;
         uint256 stakeTime = block.timestamp - time;
         if (stakeTime > vestingPeriod) return FULL_VESTING;
@@ -339,7 +346,7 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      */
-    function update(address) external override {
+    function update(bytes32, address, bytes calldata) external override {
         requireOwner();
         _update();
     }
@@ -348,35 +355,49 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
      * @notice method called ad hoc to clean up and perform additional accounting
      * @dev will only be called manually, and should not contain any essential logic
      */
-    function clean() external override {
+    function clean(bytes calldata) external override {
         requireOwner();
         _update();
         _clean(address(_token));
     }
 
     /**
-     * @notice fund Geyser by locking up reward tokens for distribution
+     * @notice fund module by locking up reward tokens for distribution
      * @param amount number of reward tokens to lock up as funding
      * @param duration period (seconds) over which funding will be unlocked
      */
     function fund(uint256 amount, uint256 duration) external {
-        _update();
         _fund(address(_token), amount, duration, block.timestamp);
     }
 
     /**
-     * @notice fund Geyser by locking up reward tokens for distribution
+     * @notice fund module by locking up reward tokens for distribution
      * @param amount number of reward tokens to lock up as funding
      * @param duration period (seconds) over which funding will be unlocked
      * @param start time (seconds) at which funding begins to unlock
      */
-    function fund(
+    function fund(uint256 amount, uint256 duration, uint256 start) external {
+        _fund(address(_token), amount, duration, start);
+    }
+
+    /**
+     * @dev private helper method for funding with fee processing
+     */
+    function _fund(
+        address token,
         uint256 amount,
         uint256 duration,
         uint256 start
-    ) external {
+    ) private {
         _update();
-        _fund(address(_token), amount, duration, start);
+
+        // get fees
+        (address receiver, uint256 rate) = _config.getAddressUint96(
+            keccak256("gysr.core.friendly.fund.fee")
+        );
+
+        // do funding
+        _fund(token, amount, duration, start, receiver, rate);
     }
 
     /**
@@ -395,36 +416,27 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
         rewardDust = 0;
 
         // global accounting
-        rewardsPerStakedShare +=
-            (rewardsToUnlock * 10**DECIMALS) /
-            totalStakingShares;
+        rewardsPerStakedShare += (rewardsToUnlock * 1e18) / totalStakingShares;
     }
 
     /**
      * @return total number of locked reward tokens
      */
     function totalLocked() public view returns (uint256) {
-        if (lockedShares(address(_token)) == 0) {
-            return 0;
-        }
         return
-            (_token.balanceOf(address(this)) * lockedShares(address(_token))) /
-            totalShares(address(_token));
+            _token.getAmount(
+                totalShares(address(_token)),
+                lockedShares(address(_token))
+            );
     }
 
     /**
      * @return total number of unlocked reward tokens
      */
     function totalUnlocked() public view returns (uint256) {
-        uint256 unlockedShares =
-            totalShares(address(_token)) - lockedShares(address(_token));
-
-        if (unlockedShares == 0) {
-            return 0;
-        }
-        return
-            (_token.balanceOf(address(this)) * unlockedShares) /
-            totalShares(address(_token));
+        uint256 total = totalShares(address(_token));
+        uint256 locked = lockedShares(address(_token));
+        return _token.getAmount(total, total - locked);
     }
 
     /**
@@ -436,15 +448,15 @@ contract ERC20FriendlyRewardModule is ERC20BaseRewardModule {
             return 0;
         }
         return
-            ((totalStakingShares - totalRawStakingShares) * 10**DECIMALS) /
+            ((totalStakingShares - totalRawStakingShares) * 1e18) /
             totalStakingShares;
     }
 
     /**
-     * @param addr address of interest
+     * @param account bytes32 id for account of interest
      * @return number of active stakes for user
      */
-    function stakeCount(address addr) public view returns (uint256) {
-        return stakes[addr].length;
+    function stakeCount(bytes32 account) public view returns (uint256) {
+        return stakes[account].length;
     }
 }

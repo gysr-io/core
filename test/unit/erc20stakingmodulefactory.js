@@ -1,18 +1,21 @@
 // test module for ERC20StakingModuleFactory
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
 const { reportGas } = require('../util/helper');
 
-const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
-const ERC20StakingModuleFactory = contract.fromArtifact('ERC20StakingModuleFactory');
-const TestToken = contract.fromArtifact('TestToken');
+const ERC20StakingModule = artifacts.require('ERC20StakingModule');
+const ERC20StakingModuleFactory = artifacts.require('ERC20StakingModuleFactory');
+const TestToken = artifacts.require('TestToken');
 
 
 describe('ERC20StakingModuleFactory', function () {
-  const [owner, org, alice] = accounts;
+  let org, owner, alice, config;
+  before(async function () {
+    [org, owner, alice, config] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.factory = await ERC20StakingModuleFactory.new({ from: org });
@@ -24,7 +27,7 @@ describe('ERC20StakingModuleFactory', function () {
     it('should fail', async function () {
       const data = "0x0de0b6b3a7640000"; // not a full 32 bytes
       await expectRevert(
-        this.factory.createModule(data, { from: owner }),
+        this.factory.createModule(config, data, { from: owner }),
         'smf1' // ERC20StakingModuleFactory: invalid data
       );
     });
@@ -37,7 +40,7 @@ describe('ERC20StakingModuleFactory', function () {
       const data = web3.eth.abi.encodeParameter('address', this.token.address);
 
       // create module with factory
-      this.res = await this.factory.createModule(data, { from: owner });
+      this.res = await this.factory.createModule(config, data, { from: owner });
       this.addr = this.res.logs.filter(l => l.event === 'ModuleCreated')[0].args.module;
       this.module = await ERC20StakingModule.at(this.addr);
     });

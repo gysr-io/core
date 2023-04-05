@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 /**
  * @title Reward module info interface
@@ -24,7 +24,9 @@ interface IRewardModuleInfo {
      * @return symbols
      * @return decimals
      */
-    function tokens(address module)
+    function tokens(
+        address module
+    )
         external
         view
         returns (
@@ -37,13 +39,15 @@ interface IRewardModuleInfo {
     /**
      * @notice generic function to get pending reward balances
      * @param module address of reward module
-     * @param addr account address of interest for preview
+     * @param account bytes32 account of interest for preview
      * @param shares number of shares that would be used
+     * @param data additional encoded data
      * @return estimated reward balances
      */
     function rewards(
         address module,
-        address addr,
-        uint256 shares
+        bytes32 account,
+        uint256 shares,
+        bytes calldata data
     ) external view returns (uint256[] memory);
 }

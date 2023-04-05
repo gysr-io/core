@@ -6,11 +6,13 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "./interfaces/IRewardModule.sol";
+import "./interfaces/IConfiguration.sol";
 import "./ERC20BaseRewardModule.sol";
 import "./GysrUtils.sol";
+import "./TokenUtils.sol";
 
 /**
  * @title ERC20 competitive reward module
@@ -26,7 +28,7 @@ import "./GysrUtils.sol";
  * h/t https://github.com/ampleforth/token-geyser
  */
 contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
-    using SafeERC20 for IERC20;
+    using TokenUtils for IERC20;
     using GysrUtils for uint256;
 
     // single stake by user
@@ -35,7 +37,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
         uint256 timestamp;
     }
 
-    mapping(address => Stake[]) public stakes;
+    mapping(bytes32 => Stake[]) public stakes;
 
     // configuration fields
     uint256 public immutable bonusMin;
@@ -43,6 +45,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
     uint256 public immutable bonusPeriod;
     IERC20 private immutable _token;
     address private immutable _factory;
+    IConfiguration private immutable _config;
 
     // global state fields
     uint256 public totalStakingShares;
@@ -55,6 +58,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      * @param bonusMin_ initial time bonus
      * @param bonusMax_ maximum time bonus
      * @param bonusPeriod_ period (in seconds) over which time bonus grows to max
+     * @param config_ address for configuration contract
      * @param factory_ address of module factory
      */
     constructor(
@@ -62,11 +66,14 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
         uint256 bonusMin_,
         uint256 bonusMax_,
         uint256 bonusPeriod_,
+        address config_,
         address factory_
     ) {
+        require(token_ != address(0));
         require(bonusMin_ <= bonusMax_, "crm1");
 
         _token = IERC20(token_);
+        _config = IConfiguration(config_);
         _factory = factory_;
 
         bonusMin = bonusMin_;
@@ -122,7 +129,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      * @inheritdoc IRewardModule
      */
     function stake(
-        address account,
+        bytes32 account,
         address,
         uint256 shares,
         bytes calldata
@@ -136,33 +143,35 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      * @inheritdoc IRewardModule
      */
     function unstake(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
+        address receiver,
         uint256 shares,
         bytes calldata data
     ) external override onlyOwner returns (uint256, uint256) {
         _update();
-        return _unstake(account, user, shares, data);
+        return _unstake(account, sender, receiver, shares, data);
     }
 
     /**
      * @inheritdoc IRewardModule
      */
     function claim(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
+        address receiver,
         uint256 shares,
         bytes calldata data
     ) external override onlyOwner returns (uint256 spent, uint256 vested) {
         _update();
-        (spent, vested) = _unstake(account, user, shares, data);
+        (spent, vested) = _unstake(account, sender, receiver, shares, data);
         _stake(account, shares);
     }
 
     /**
      * @inheritdoc IRewardModule
      */
-    function update(address) external override {
+    function update(bytes32, address, bytes calldata) external override {
         requireOwner();
         _update();
     }
@@ -170,7 +179,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      */
-    function clean() external override {
+    function clean(bytes calldata) external override {
         requireOwner();
         _update();
         _clean(address(_token));
@@ -184,7 +193,6 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      * @param duration period (seconds) over which funding will be unlocked
      */
     function fund(uint256 amount, uint256 duration) external {
-        _update();
         _fund(address(_token), amount, duration, block.timestamp);
     }
 
@@ -194,12 +202,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      * @param duration period (seconds) over which funding will be unlocked
      * @param start time (seconds) at which funding begins to unlock
      */
-    function fund(
-        uint256 amount,
-        uint256 duration,
-        uint256 start
-    ) external {
-        _update();
+    function fund(uint256 amount, uint256 duration, uint256 start) external {
         _fund(address(_token), amount, duration, start);
     }
 
@@ -210,57 +213,50 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      */
     function timeBonus(uint256 time) public view returns (uint256) {
         if (time >= bonusPeriod) {
-            return 10**DECIMALS + bonusMax;
+            return 1e18 + bonusMax;
         }
 
         // linearly interpolate between bonus min and bonus max
         uint256 bonus = bonusMin + ((bonusMax - bonusMin) * time) / bonusPeriod;
-        return 10**DECIMALS + bonus;
+        return 1e18 + bonus;
     }
 
     /**
      * @return total number of locked reward tokens
      */
     function totalLocked() public view returns (uint256) {
-        if (lockedShares(address(_token)) == 0) {
-            return 0;
-        }
         return
-            (_token.balanceOf(address(this)) * lockedShares(address(_token))) /
-            totalShares(address(_token));
+            _token.getAmount(
+                totalShares(address(_token)),
+                lockedShares(address(_token))
+            );
     }
 
     /**
      * @return total number of unlocked reward tokens
      */
     function totalUnlocked() public view returns (uint256) {
-        uint256 unlockedShares =
-            totalShares(address(_token)) - lockedShares(address(_token));
-
-        if (unlockedShares == 0) {
-            return 0;
-        }
-        return
-            (_token.balanceOf(address(this)) * unlockedShares) /
-            totalShares(address(_token));
+        uint256 total = totalShares(address(_token));
+        uint256 locked = lockedShares(address(_token));
+        return _token.getAmount(total, total - locked);
     }
 
     /**
-     * @param addr address of interest
+     * @param account bytes32 account of interest
      * @return number of active stakes for user
      */
-    function stakeCount(address addr) public view returns (uint256) {
-        return stakes[addr].length;
+    function stakeCount(bytes32 account) public view returns (uint256) {
+        return stakes[account].length;
     }
 
     // -- ERC20CompetitiveRewardModule internal -------------------------------
 
     /**
      * @dev internal implementation of stake method
-     * @param account address of staking account
+     * @param account bytes32 id of staking account
      * @param shares number of shares burned
      */
-    function _stake(address account, uint256 shares) private {
+    function _stake(bytes32 account, uint256 shares) private {
         // update user staking info
         stakes[account].push(Stake(shares, block.timestamp));
 
@@ -270,16 +266,18 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
 
     /**
      * @dev internal implementation of unstake method
-     * @param account address of staking account
-     * @param user address of user
+     * @param account bytes32 id of staking account
+     * @param sender address of sender
+     * @param receiver address of receiver
      * @param shares number of shares burned
      * @param data additional data
      * @return spent amount of gysr spent
      * @return vested amount of gysr vested
      */
     function _unstake(
-        address account,
-        address user,
+        bytes32 account,
+        address sender,
+        address receiver,
         uint256 shares,
         bytes calldata data
     ) private returns (uint256 spent, uint256 vested) {
@@ -290,7 +288,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
         // parse GYSR amount from data
         if (data.length == 32) {
             assembly {
-                spent := calldataload(164)
+                spent := calldataload(196)
             }
         }
 
@@ -305,41 +303,34 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
         );
 
         // compute and apply GYSR token bonus
-        uint256 gysrWeightedShareSeconds =
-            (bonus * timeWeightedShareSeconds) / 10**DECIMALS;
+        uint256 gysrWeightedShareSeconds = (bonus * timeWeightedShareSeconds) /
+            1e18;
 
         // get reward in shares
-        uint256 unlockedShares =
-            totalShares(address(_token)) - lockedShares(address(_token));
+        uint256 unlockedShares = totalShares(address(_token)) -
+            lockedShares(address(_token));
 
-        uint256 rewardShares =
-            (unlockedShares * gysrWeightedShareSeconds) /
-                (totalStakingShareSeconds + gysrWeightedShareSeconds);
+        uint256 rewardShares = (unlockedShares * gysrWeightedShareSeconds) /
+            (totalStakingShareSeconds + gysrWeightedShareSeconds);
 
         if (rewardShares == 0) {
             return (0, 0);
         }
 
         // reward
-        _distribute(user, address(_token), rewardShares);
+        _distribute(receiver, address(_token), rewardShares);
 
         // update usage
         uint256 ratio;
         if (spent > 0) {
             vested = spent;
-            emit GysrSpent(user, spent);
-            emit GysrVested(user, vested);
-            ratio = ((bonus - 10**DECIMALS) * 10**DECIMALS) / bonus;
+            emit GysrSpent(sender, spent);
+            emit GysrVested(sender, vested);
+            ratio = ((bonus - 1e18) * 1e18) / bonus;
         }
-        uint256 weight =
-            (shareSeconds * 10**DECIMALS) /
-                (totalStakingShareSeconds + shareSeconds);
-        _usage =
-            _usage -
-            (weight * _usage) /
-            10**DECIMALS +
-            (weight * ratio) /
-            10**DECIMALS;
+        uint256 weight = (shareSeconds * 1e18) /
+            (totalStakingShareSeconds + shareSeconds);
+        _usage = _usage - (weight * _usage) / 1e18 + (weight * ratio) / 1e18;
     }
 
     /**
@@ -360,18 +351,18 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
      * @dev helper function to actually execute unstaking, first-in last-out, 
      while computing and applying time bonus. This function also updates
      user and global totals for shares and share-seconds.
-     * @param user address of user
+     * @param account address of user
      * @param shares number of staking shares to burn
      * @return rawShareSeconds raw share seconds burned
      * @return bonusShareSeconds time bonus weighted share seconds
      */
-    function _unstakeFirstInLastOut(address user, uint256 shares)
-        private
-        returns (uint256 rawShareSeconds, uint256 bonusShareSeconds)
-    {
+    function _unstakeFirstInLastOut(
+        bytes32 account,
+        uint256 shares
+    ) private returns (uint256 rawShareSeconds, uint256 bonusShareSeconds) {
         // redeem first-in-last-out
         uint256 sharesLeftToBurn = shares;
-        Stake[] storage userStakes = stakes[user];
+        Stake[] storage userStakes = stakes[account];
         while (sharesLeftToBurn > 0) {
             Stake storage lastStake = userStakes[userStakes.length - 1];
             uint256 stakeTime = block.timestamp - lastStake.timestamp;
@@ -383,7 +374,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
                 // fully redeem a past stake
                 bonusShareSeconds +=
                     (lastStake.shares * stakeTime * bonus) /
-                    10**DECIMALS;
+                    1e18;
                 rawShareSeconds += lastStake.shares * stakeTime;
                 sharesLeftToBurn -= lastStake.shares;
                 userStakes.pop();
@@ -391,7 +382,7 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
                 // partially redeem a past stake
                 bonusShareSeconds +=
                     (sharesLeftToBurn * stakeTime * bonus) /
-                    10**DECIMALS;
+                    1e18;
                 rawShareSeconds += sharesLeftToBurn * stakeTime;
                 lastStake.shares -= sharesLeftToBurn;
                 sharesLeftToBurn = 0;
@@ -401,5 +392,25 @@ contract ERC20CompetitiveRewardModule is ERC20BaseRewardModule {
         // update global totals
         totalStakingShareSeconds -= rawShareSeconds;
         totalStakingShares -= shares;
+    }
+
+    /**
+     * @dev private helper method for funding with fee processing
+     */
+    function _fund(
+        address token,
+        uint256 amount,
+        uint256 duration,
+        uint256 start
+    ) private {
+        _update();
+
+        // get fees
+        (address receiver, uint256 rate) = _config.getAddressUint96(
+            keccak256("gysr.core.competitive.fund.fee")
+        );
+
+        // do funding
+        _fund(token, amount, duration, start, receiver, rate);
     }
 }

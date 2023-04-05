@@ -1,6 +1,6 @@
 // unit tests for ERC20StakingModuleInfo library
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
@@ -9,26 +9,21 @@ const {
   bonus,
   days,
   shares,
-  toFixedPointBigNumber,
-  fromFixedPointBigNumber,
-  reportGas,
+  bytes32,
   DECIMALS
 } = require('../util/helper');
 
-const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
-const GeyserToken = contract.fromArtifact('GeyserToken');
-const TestToken = contract.fromArtifact('TestToken');
-const ERC20StakingModuleInfo = contract.fromArtifact('ERC20StakingModuleInfo');
-
-
-// need decent tolerance to account for potential timing error
-const TOKEN_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
-const SHARE_DELTA = toFixedPointBigNumber(0.0001 * (10 ** 6), 10, DECIMALS);
-const BONUS_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
+const ERC20StakingModule = artifacts.require('ERC20StakingModule');
+const GeyserToken = artifacts.require('GeyserToken');
+const TestToken = artifacts.require('TestToken');
+const ERC20StakingModuleInfo = artifacts.require('ERC20StakingModuleInfo');
 
 
 describe('ERC20StakingModuleInfo', function () {
-  const [org, owner, controller, bob, alice, factory] = accounts;
+  let org, owner, alice, bob, other, factory;
+  before(async function () {
+    [org, owner, alice, bob, other, factory] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.gysr = await GeyserToken.new({ from: org });
@@ -71,6 +66,30 @@ describe('ERC20StakingModuleInfo', function () {
 
     });
 
+    describe('when getting tokens', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.tokens(this.module.address);
+      });
+
+      it('should return staking token address as first element in addresses list', async function () {
+        expect(this.res.addresses_[0]).to.equal(this.token.address);
+      });
+
+      it('should return staking token name as first element in names list', async function () {
+        expect(this.res.names_[0]).to.equal("TestToken");
+      });
+
+      it('should return staking token symbol as first element in symbols list', async function () {
+        expect(this.res.symbols_[0]).to.equal("TKN");
+      });
+
+      it('should return staking token decimals as first element in decimals list', async function () {
+        expect(this.res.decimals_[0]).to.be.bignumber.equal(new BN(18));
+      });
+
+    });
+
     describe('when user gets all shares', function () {
 
       beforeEach(async function () {
@@ -79,6 +98,22 @@ describe('ERC20StakingModuleInfo', function () {
 
       it('should return zero', async function () {
         expect(this.res).to.be.bignumber.equal(new BN(0));
+      });
+
+    });
+
+    describe('when user gets positions', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.positions(this.module.address, alice, []);
+      });
+
+      it('should return empty list of accounts', async function () {
+        expect(this.res.accounts_.length).eq(0);
+      });
+
+      it('should return empty list of shares', async function () {
+        expect(this.res.accounts_.length).eq(0);
       });
 
     });
@@ -146,6 +181,30 @@ describe('ERC20StakingModuleInfo', function () {
 
       it('should return expected number of shares', async function () {
         expect(this.res).to.be.bignumber.equal(shares(75));
+      });
+
+    });
+
+    describe('when user gets positions', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.positions(this.module.address, alice, []);
+      });
+
+      it('should return single element list of accounts', async function () {
+        expect(this.res.accounts_.length).eq(1);
+      });
+
+      it('should return single element list of shares', async function () {
+        expect(this.res.accounts_.length).eq(1);
+      });
+
+      it('should return address as account', async function () {
+        expect(this.res.accounts_[0]).to.be.equal(bytes32(alice));
+      });
+
+      it('should return full share balance', async function () {
+        expect(this.res.shares_[0]).to.be.bignumber.equal(shares(200));
       });
 
     });

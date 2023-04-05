@@ -1,23 +1,24 @@
 // unit tests for ERC721StakingModule
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
 const {
-  tokens,
-  days,
-  reportGas
+  e6,
+  days
 } = require('../util/helper');
 
-const ERC721StakingModule = contract.fromArtifact('ERC721StakingModule');
-const TestERC721 = contract.fromArtifact('TestERC721');
-const TestERC1155 = contract.fromArtifact('TestERC1155');
-
+const ERC721StakingModule = artifacts.require('ERC721StakingModule');
+const TestERC721 = artifacts.require('TestERC721');
+const TestERC1155 = artifacts.require('TestERC1155');
 
 
 describe('ERC721StakingModule', function () {
-  const [org, owner, controller, bob, alice, factory, other] = accounts;
+  let org, owner, alice, bob, other, factory;
+  before(async function () {
+    [org, owner, alice, bob, other, factory] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.token = await TestERC721.new({ from: org });
@@ -125,7 +126,7 @@ describe('ERC721StakingModule', function () {
         const data = web3.eth.abi.encodeParameters(['uint256'], [8]);
         await expectRevert(
           this.module.stake(bob, 1, data, { from: owner }),
-          'ERC721: transfer of token that is not own'
+          'ERC721: transfer from incorrect owner'
         );
       });
     });
@@ -135,7 +136,7 @@ describe('ERC721StakingModule', function () {
         const data = web3.eth.abi.encodeParameters(['uint256', 'uint256'], [12, 8]);
         await expectRevert(
           this.module.stake(bob, 2, data, { from: owner }),
-          'ERC721: transfer of token that is not own'
+          'ERC721: transfer from incorrect owner'
         );
       });
     });
@@ -212,17 +213,13 @@ describe('ERC721StakingModule', function () {
         expectEvent(
           this.res0,
           'Staked',
-          { user: alice, token: this.token.address, amount: new BN(2), shares: tokens(2) }
+          { user: alice, token: this.token.address, amount: new BN(2), shares: e6(2) }
         );
         expectEvent(
           this.res1,
           'Staked',
-          { user: bob, token: this.token.address, amount: new BN(3), shares: tokens(3) }
+          { user: bob, token: this.token.address, amount: new BN(3), shares: e6(3) }
         );
-      });
-
-      it('gas cost', async function () {
-        reportGas('ERC721StakingModule', 'stake', 'stake 3 nfts', this.res1);
       });
 
     });
@@ -387,12 +384,8 @@ describe('ERC721StakingModule', function () {
         expectEvent(
           this.res,
           'Unstaked',
-          { user: alice, token: this.token.address, amount: new BN(3), shares: tokens(3) }
+          { user: alice, token: this.token.address, amount: new BN(3), shares: e6(3) }
         );
-      });
-
-      it('gas cost', async function () {
-        reportGas('ERC721StakingModule', 'unstake', 'unstake 3 nfts', this.res);
       });
 
     });
@@ -478,7 +471,7 @@ describe('ERC721StakingModule', function () {
         expectEvent(
           this.res,
           'Unstaked',
-          { user: alice, token: this.token.address, amount: new BN(2), shares: tokens(2) }
+          { user: alice, token: this.token.address, amount: new BN(2), shares: e6(2) }
         );
       });
 
@@ -566,7 +559,7 @@ describe('ERC721StakingModule', function () {
         expectEvent(
           this.res,
           'Claimed',
-          { user: alice, token: this.token.address, amount: new BN(3), shares: tokens(3) }
+          { user: alice, token: this.token.address, amount: new BN(3), shares: e6(3) }
         );
       });
 
@@ -603,7 +596,7 @@ describe('ERC721StakingModule', function () {
         expectEvent(
           this.res,
           'Claimed',
-          { user: alice, token: this.token.address, amount: new BN(1), shares: tokens(1) }
+          { user: alice, token: this.token.address, amount: new BN(1), shares: e6(1) }
         );
       });
 

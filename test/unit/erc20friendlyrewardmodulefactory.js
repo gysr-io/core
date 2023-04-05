@@ -1,18 +1,21 @@
 // test module for ERC20FriendlyRewardModuleFactory
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
 const { bonus, days, reportGas, FEE } = require('../util/helper');
 
-const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
-const ERC20FriendlyRewardModuleFactory = contract.fromArtifact('ERC20FriendlyRewardModuleFactory');
-const TestToken = contract.fromArtifact('TestToken');
+const ERC20FriendlyRewardModule = artifacts.require('ERC20FriendlyRewardModule');
+const ERC20FriendlyRewardModuleFactory = artifacts.require('ERC20FriendlyRewardModuleFactory');
+const TestToken = artifacts.require('TestToken');
 
 
 describe('ERC20FriendlyRewardModuleFactory', function () {
-  const [owner, org, alice] = accounts;
+  let org, owner, alice, config;
+  before(async function () {
+    [org, owner, alice, config] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.factory = await ERC20FriendlyRewardModuleFactory.new({ from: org });
@@ -29,7 +32,7 @@ describe('ERC20FriendlyRewardModuleFactory', function () {
       );
 
       await expectRevert(
-        this.factory.createModule(data, { from: owner }),
+        this.factory.createModule(config, data, { from: owner }),
         'frmf1' // ERC20FriendlyRewardModuleFactory: invalid constructor data
       );
     });
@@ -45,7 +48,7 @@ describe('ERC20FriendlyRewardModuleFactory', function () {
       );
 
       // create module with factory
-      this.res = await this.factory.createModule(data, { from: owner });
+      this.res = await this.factory.createModule(config, data, { from: owner });
       this.addr = this.res.logs.filter(l => l.event === 'ModuleCreated')[0].args.module;
       this.module = await ERC20FriendlyRewardModule.at(this.addr);
     });

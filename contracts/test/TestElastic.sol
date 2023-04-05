@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -48,27 +48,6 @@ contract TestElasticToken is ERC20 {
         return super.transfer(recipient, (amount * 1e18) / _coeff);
     }
 
-    // wrap to adjust for coefficient
-    function allowance(address owner, address spender)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        return (_coeff * allowance(owner, spender)) / 1e18;
-    }
-
-    // wrap to adjust for inverse of coefficient
-    function approve(address spender, uint256 amount)
-        public
-        virtual
-        override
-        returns (bool)
-    {
-        return super.approve(spender, (amount * 1e18) / _coeff);
-    }
-
     // wrap to adjust for inverse of coefficient
     function transferFrom(
         address sender,
@@ -78,24 +57,5 @@ contract TestElasticToken is ERC20 {
         return super.transferFrom(sender, recipient, (amount * 1e18) / _coeff);
     }
 
-    // wrap to adjust for inverse of coefficient
-    function increaseAllowance(address spender, uint256 addedValue)
-        public
-        virtual
-        override
-        returns (bool)
-    {
-        return super.increaseAllowance(spender, (addedValue * 1e18) / _coeff);
-    }
-
-    // wrap to adjust for inverse of coefficient
-    function decreaseAllowance(address spender, uint256 subtractedValue)
-        public
-        virtual
-        override
-        returns (bool)
-    {
-        return
-            super.decreaseAllowance(spender, (subtractedValue * 1e18) / _coeff);
-    }
+    // note: leave allowances to be handled in base units
 }

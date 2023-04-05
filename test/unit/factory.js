@@ -1,26 +1,29 @@
 // test module for PoolFactory
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
 const { bonus, days, reportGas, FEE } = require('../util/helper');
 
-const PoolFactory = contract.fromArtifact('PoolFactory');
-const Pool = contract.fromArtifact('Pool');
-const ERC20StakingModuleFactory = contract.fromArtifact('ERC20StakingModuleFactory');
-const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
-const ERC20CompetitiveRewardModuleFactory = contract.fromArtifact('ERC20CompetitiveRewardModuleFactory');
-const ERC20CompetitiveRewardModule = contract.fromArtifact('ERC20CompetitiveRewardModule');
-const TestToken = contract.fromArtifact('TestToken');
-const TestLiquidityToken = contract.fromArtifact('TestLiquidityToken');
+const PoolFactory = artifacts.require('PoolFactory');
+const Pool = artifacts.require('Pool');
+const ERC20StakingModuleFactory = artifacts.require('ERC20StakingModuleFactory');
+const ERC20StakingModule = artifacts.require('ERC20StakingModule');
+const ERC20CompetitiveRewardModuleFactory = artifacts.require('ERC20CompetitiveRewardModuleFactory');
+const ERC20CompetitiveRewardModule = artifacts.require('ERC20CompetitiveRewardModule');
+const TestToken = artifacts.require('TestToken');
+const TestLiquidityToken = artifacts.require('TestLiquidityToken');
 
 
 describe('PoolFactory', function () {
-  const [owner, org, gysr, treasury, other, subfactory] = accounts;
+  let org, owner, gysr, config, other, subfactory;
+  before(async function () {
+    [org, owner, gysr, config, other, subfactory] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
-    this.factory = await PoolFactory.new(gysr, treasury, { from: org });
+    this.factory = await PoolFactory.new(gysr, config, { from: org });
     this.stakingModuleFactory = await ERC20StakingModuleFactory.new({ from: org });
     this.rewardModuleFactory = await ERC20CompetitiveRewardModuleFactory.new({ from: org });
     this.stakingToken = await TestLiquidityToken.new({ from: org });
@@ -29,107 +32,10 @@ describe('PoolFactory', function () {
 
   describe('when factory constructed', function () {
 
-    it('should return initial treasury address', async function () {
-      expect(await this.factory.treasury()).to.be.bignumber.equal(treasury);
-    });
-
-    it('should return max fee', async function () {
-      expect(await this.factory.fee()).to.be.bignumber.equal(bonus(FEE));
-    });
-
     it('should have zero Pool count', async function () {
       expect(await this.factory.count()).to.be.bignumber.equal(new BN(0));
     });
-  });
 
-  describe('fee update', function () {
-
-    describe('when sender is not controller', function () {
-      it('should fail', async function () {
-        await expectRevert(
-          this.factory.setFee(bonus(0.15), { from: other }),
-          'oc2' // OwnerController: caller is not the controller
-        );
-      });
-    });
-
-    describe('when new value is greater than max', function () {
-      it('should fail', async function () {
-        await expectRevert(
-          this.factory.setFee(bonus(0.25), { from: org }),
-          'f3' // PoolFactory: fee exceeds max
-        );
-      });
-    });
-
-    describe('when value is lower than max', function () {
-      beforeEach(async function () {
-        this.res = await this.factory.setFee(bonus(0.15), { from: org });
-      });
-
-      it('should update global GYSR fee', async function () {
-        expect(await this.factory.fee()).to.be.bignumber.equal(bonus(0.15));
-      });
-
-      it('should emit FeeUpdated event', async function () {
-        expectEvent(this.res, 'FeeUpdated', { previous: bonus(0.2), updated: bonus(0.15) });
-      });
-    });
-
-    describe('when value is raised back to max', function () {
-      beforeEach(async function () {
-        await this.factory.setFee(bonus(0.15), { from: org });
-        this.res = await this.factory.setFee(bonus(0.20), { from: org });
-      });
-
-      it('should set global GYSR fee to max', async function () {
-        expect(await this.factory.fee()).to.be.bignumber.equal(bonus(0.20));
-      });
-
-      it('should emit FeeUpdated event', async function () {
-        expectEvent(this.res, 'FeeUpdated', { previous: bonus(0.15), updated: bonus(0.20) });
-      });
-    });
-
-    describe('when new value is zero', function () {
-      beforeEach(async function () {
-        this.res = await this.factory.setFee(new BN(0), { from: org });
-      });
-
-      it('should set global GYSR fee to zero', async function () {
-        expect(await this.factory.fee()).to.be.bignumber.equal(new BN(0));
-      });
-
-      it('should emit FeeUpdated event', async function () {
-        expectEvent(this.res, 'FeeUpdated', { previous: bonus(0.2), updated: bonus(0.0) });
-      });
-    });
-  });
-
-  describe('treasury update', function () {
-
-    describe('when sender is not controller', function () {
-      it('should fail', async function () {
-        await expectRevert(
-          this.factory.setTreasury(other, { from: other }),
-          'oc2' // OwnerController: caller is not the controller
-        );
-      });
-    });
-
-    describe('when authorized', function () {
-      beforeEach(async function () {
-        this.res = await this.factory.setTreasury(other, { from: org });
-      });
-
-      it('should update gysr treasury', async function () {
-        expect(await this.factory.treasury()).to.equal(other);
-      });
-
-      it('should emit TreasuryUpdated event', async function () {
-        expectEvent(this.res, 'TreasuryUpdated', { previous: treasury, updated: other });
-      });
-    });
   });
 
   describe('whitelist update', function () {
@@ -298,7 +204,7 @@ describe('PoolFactory', function () {
         await this.factory.setWhitelist(this.stakingModuleFactory.address, new BN(1), { from: org });
         await this.factory.setWhitelist(this.rewardModuleFactory.address, new BN(2), { from: org });
 
-        // create geyser
+        // create pool
         this.res = await this.factory.create(
           this.stakingModuleFactory.address,
           this.rewardModuleFactory.address,
@@ -368,15 +274,15 @@ describe('PoolFactory', function () {
         expect(await module.bonusPeriod()).to.be.bignumber.equal(days(30));
       });
 
-      it('should be present in factory Geyser set', async function () {
+      it('should be present in factory pool set', async function () {
         expect(await this.factory.map(this.pool.address)).to.be.true;
       });
 
-      it('should be present in factory Geyser list', async function () {
+      it('should be present in factory pool list', async function () {
         expect(await this.factory.list(0)).to.be.equal(this.pool.address);
       });
 
-      it('should increase Geyser count', async function () {
+      it('should increase pool count', async function () {
         expect(await this.factory.count()).to.be.bignumber.equal(new BN(1));
       });
 

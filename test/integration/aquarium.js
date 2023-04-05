@@ -1,7 +1,7 @@
 // integration tests for "Aquarium" Pool
 // made up of ERC721StakingModule and ERC20FriendlyRewardModule
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time, expectEvent, expectRevert, constants, singletons } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
@@ -10,21 +10,24 @@ const {
   bonus,
   days,
   shares,
+  e18,
+  e6,
   toFixedPointBigNumber,
   fromFixedPointBigNumber,
-  reportGas,
+  bytes32,
   DECIMALS
 } = require('../util/helper');
 
-const Pool = contract.fromArtifact('Pool');
-const PoolFactory = contract.fromArtifact('PoolFactory');
-const GeyserToken = contract.fromArtifact('GeyserToken');
-const ERC721StakingModuleFactory = contract.fromArtifact('ERC721StakingModuleFactory');
-const ERC721StakingModule = contract.fromArtifact('ERC721StakingModule');
-const ERC20FriendlyRewardModuleFactory = contract.fromArtifact('ERC20FriendlyRewardModuleFactory');
-const ERC20FriendlyRewardModule = contract.fromArtifact('ERC20FriendlyRewardModule');
-const TestToken = contract.fromArtifact('TestToken');
-const TestERC721 = contract.fromArtifact('TestERC721');
+const Pool = artifacts.require('Pool');
+const Configuration = artifacts.require('Configuration');
+const PoolFactory = artifacts.require('PoolFactory');
+const GeyserToken = artifacts.require('GeyserToken');
+const ERC721StakingModuleFactory = artifacts.require('ERC721StakingModuleFactory');
+const ERC721StakingModule = artifacts.require('ERC721StakingModule');
+const ERC20FriendlyRewardModuleFactory = artifacts.require('ERC20FriendlyRewardModuleFactory');
+const ERC20FriendlyRewardModule = artifacts.require('ERC20FriendlyRewardModule');
+const TestToken = artifacts.require('TestToken');
+const TestERC721 = artifacts.require('TestERC721');
 
 // need decent tolerance to account for potential timing error
 const TOKEN_DELTA = toFixedPointBigNumber(0.001, 10, DECIMALS);
@@ -33,12 +36,16 @@ const BONUS_DELTA = toFixedPointBigNumber(0.0001, 10, DECIMALS);
 
 
 describe('Aquarium integration', function () {
-  const [owner, org, treasury, alice, bob, other] = accounts;
+  let org, owner, treasury, alice, bob, other;
+  before(async function () {
+    [org, owner, treasury, alice, bob, other] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     // base setup
     this.gysr = await GeyserToken.new({ from: org });
-    this.factory = await PoolFactory.new(this.gysr.address, treasury, { from: org });
+    this.config = await Configuration.new({ from: org });
+    this.factory = await PoolFactory.new(this.gysr.address, this.config.address, { from: org });
     this.stakingModuleFactory = await ERC721StakingModuleFactory.new({ from: org });
     this.rewardModuleFactory = await ERC20FriendlyRewardModuleFactory.new({ from: org });
     this.stk = await TestERC721.new({ from: org });
@@ -54,6 +61,14 @@ describe('Aquarium integration', function () {
     // whitelist sub factories
     await this.factory.setWhitelist(this.stakingModuleFactory.address, new BN(1), { from: org });
     await this.factory.setWhitelist(this.rewardModuleFactory.address, new BN(2), { from: org });
+
+    // configure fee
+    await this.config.setAddressUint96(
+      web3.utils.soliditySha3('gysr.core.pool.spend.fee'),
+      treasury,
+      e18(0.20),
+      { from: org }
+    );
 
     // create pool
     const res = await this.factory.create(
@@ -95,7 +110,7 @@ describe('Aquarium integration', function () {
         const data = web3.eth.abi.encodeParameters(['uint256'], [3]);
         await expectRevert(
           this.pool.stake(1, data, [], { from: alice }),
-          'ERC721: transfer caller is not owner nor approved'
+          'ERC721: caller is not token owner nor approved'
         );
       });
     });
@@ -121,7 +136,7 @@ describe('Aquarium integration', function () {
         const data = web3.eth.abi.encodeParameters(['uint256'], [8]);
         await expectRevert(
           this.pool.stake(1, data, [], { from: bob }),
-          'ERC721: transfer of token that is not own'
+          'ERC721: transfer from incorrect owner'
         );
       });
     });
@@ -136,7 +151,7 @@ describe('Aquarium integration', function () {
         const data = web3.eth.abi.encodeParameters(['uint256', 'uint256'], [12, 8]);
         await expectRevert(
           this.pool.stake(2, data, [], { from: bob }),
-          'ERC721: transfer of token that is not own'
+          'ERC721: transfer from incorrect owner'
         );
       });
     });
@@ -178,20 +193,17 @@ describe('Aquarium integration', function () {
       });
 
       it('should record that 0 GYSR was spent', async function () {
-        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(0))
+        expect((await this.reward.stakes(bytes32(alice), 0)).gysr).to.be.bignumber.equal(tokens(0))
       });
 
       it('should emit Staked event', async function () {
         expectEvent(
           this.res,
           'Staked',
-          { user: alice, token: this.stk.address, amount: new BN(3), shares: tokens(3) }
+          { user: alice, token: this.stk.address, amount: new BN(3), shares: e6(3) }
         );
       });
 
-      it('report gas', async function () {
-        reportGas('Pool', 'stake', 'aquarium', this.res)
-      });
     });
 
 
@@ -276,8 +288,8 @@ describe('Aquarium integration', function () {
       });
 
       it('should record that 0 GYSR was spent', async function () {
-        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(0))
-        expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(0))
+        expect((await this.reward.stakes(bytes32(alice), 0)).gysr).to.be.bignumber.equal(tokens(0))
+        expect((await this.reward.stakes(bytes32(bob), 0)).gysr).to.be.bignumber.equal(tokens(0))
       });
 
       it('should not change vested GYSR balance', async function () {
@@ -292,12 +304,12 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res0,
           'Staked',
-          { user: alice, token: this.stk.address, amount: new BN(3), shares: tokens(3) }
+          { user: alice, token: this.stk.address, amount: new BN(3), shares: e6(3) }
         );
         expectEvent(
           this.res1,
           'Staked',
-          { user: bob, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: bob, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
       });
     });
@@ -351,13 +363,13 @@ describe('Aquarium integration', function () {
       });
 
       it('should record the GYSR spent for each user', async function () {
-        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(10))
-        expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(5))
+        expect((await this.reward.stakes(bytes32(alice), 0)).gysr).to.be.bignumber.equal(tokens(10))
+        expect((await this.reward.stakes(bytes32(bob), 0)).gysr).to.be.bignumber.equal(tokens(5))
       });
 
       it('should record the GYSR multiplier for each user', async function () {
-        expect((await this.reward.stakes(alice, 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
-        expect((await this.reward.stakes(bob, 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult1), BONUS_DELTA);
+        expect((await this.reward.stakes(bytes32(alice), 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
+        expect((await this.reward.stakes(bytes32(bob), 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult1), BONUS_DELTA);
       });
 
       it('should decrease GYSR balance of each user', async function () {
@@ -384,12 +396,12 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res0,
           'Staked',
-          { user: alice, token: this.stk.address, amount: new BN(3), shares: tokens(3) }
+          { user: alice, token: this.stk.address, amount: new BN(3), shares: e6(3) }
         );
         expectEvent(
           this.res1,
           'Staked',
-          { user: bob, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: bob, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
       });
 
@@ -453,13 +465,13 @@ describe('Aquarium integration', function () {
       });
 
       it('should record GYSR spent for one user', async function () {
-        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(10))
-        expect((await this.reward.stakes(bob, 0)).gysr).to.be.bignumber.equal(tokens(0))
+        expect((await this.reward.stakes(bytes32(alice), 0)).gysr).to.be.bignumber.equal(tokens(10))
+        expect((await this.reward.stakes(bytes32(bob), 0)).gysr).to.be.bignumber.equal(tokens(0))
       });
 
       it('should record the GYSR multiplier for one user', async function () {
-        expect((await this.reward.stakes(alice, 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
-        expect((await this.reward.stakes(bob, 0)).bonus).to.be.bignumber.equal(bonus(1));
+        expect((await this.reward.stakes(bytes32(alice), 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
+        expect((await this.reward.stakes(bytes32(bob), 0)).bonus).to.be.bignumber.equal(bonus(1));
       });
 
       it('should decrease GYSR balance for one user', async function () {
@@ -486,12 +498,12 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res0,
           'Staked',
-          { user: alice, token: this.stk.address, amount: new BN(3), shares: tokens(3) }
+          { user: alice, token: this.stk.address, amount: new BN(3), shares: e6(3) }
         );
         expectEvent(
           this.res1,
           'Staked',
-          { user: bob, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: bob, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
       });
 
@@ -615,7 +627,7 @@ describe('Aquarium integration', function () {
       });
 
       it('should have no remaining stakes for user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(0));
       });
 
       it('should leave dust', async function () {
@@ -634,7 +646,7 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res,
           'Unstaked',
-          { user: alice, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: alice, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
       });
 
@@ -654,9 +666,6 @@ describe('Aquarium integration', function () {
         );
       });
 
-      it('report gas', async function () {
-        reportGas('Pool', 'unstake', 'aquarium', this.res)
-      });
     });
 
     describe('when one user unstakes some tokens', function () {
@@ -704,12 +713,12 @@ describe('Aquarium integration', function () {
       });
 
       it('should have one remaining stake for user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(1));
       });
 
       it('should unstake first-in last-out', async function () {
-        const stake = await this.reward.stakes(alice, 0);
-        expect(stake.timestamp).to.be.bignumber.closeTo(this.t0.add(days(45)), new BN(1));
+        const stake = await this.reward.stakes(bytes32(alice), 0);
+        expect(stake.timestamp).to.be.bignumber.closeTo(this.t0.add(days(45)), new BN(2));
       });
 
       it('should leave dust', async function () {
@@ -779,7 +788,7 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res,
           'Unstaked',
-          { user: alice, token: this.stk.address, amount: new BN(4), shares: tokens(4) }
+          { user: alice, token: this.stk.address, amount: new BN(4), shares: e6(4) }
         );
       });
 
@@ -862,7 +871,7 @@ describe('Aquarium integration', function () {
       });
 
       it('should have no remaining stakes for user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(0));
       });
 
       it('should leave dust', async function () {
@@ -881,12 +890,12 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res0,
           'Unstaked',
-          { user: alice, token: this.stk.address, amount: new BN(4), shares: tokens(4) }
+          { user: alice, token: this.stk.address, amount: new BN(4), shares: e6(4) }
         );
         expectEvent(
           this.res1,
           'Unstaked',
-          { user: alice, token: this.stk.address, amount: new BN(1), shares: tokens(1) }
+          { user: alice, token: this.stk.address, amount: new BN(1), shares: e6(1) }
         );
       });
 
@@ -985,11 +994,11 @@ describe('Aquarium integration', function () {
       });
 
       it('should have no remaining stakes for first user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(0));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(0));
       });
 
       it('should have no remaining stakes for second user', async function () {
-        expect(await this.reward.stakeCount(bob)).to.be.bignumber.equal(new BN(0));
+        expect(await this.reward.stakeCount(bytes32(bob))).to.be.bignumber.equal(new BN(0));
       });
 
       it('should leave dust', async function () {
@@ -1034,12 +1043,12 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res0,
           'Unstaked',
-          { user: alice, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: alice, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
         expectEvent(
           this.res1,
           'Unstaked',
-          { user: bob, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: bob, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
       });
 
@@ -1166,7 +1175,7 @@ describe('Aquarium integration', function () {
       });
 
       it('should still have one stake for user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(1));
       });
 
       it('should disburse expected amount of reward token to user', async function () {
@@ -1197,7 +1206,7 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res,
           'Claimed',
-          { user: alice, token: this.stk.address, amount: new BN(6), shares: tokens(6) }
+          { user: alice, token: this.stk.address, amount: new BN(6), shares: e6(6) }
         );
       });
 
@@ -1217,9 +1226,6 @@ describe('Aquarium integration', function () {
         );
       });
 
-      it('report gas', async function () {
-        reportGas('Pool', 'claim', 'aquarium', this.res)
-      });
     });
 
     describe('when multiple users claim', function () {
@@ -1276,11 +1282,11 @@ describe('Aquarium integration', function () {
       });
 
       it('should have one stake for first user', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(1));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(1));
       });
 
       it('should have one stake for second user', async function () {
-        expect(await this.reward.stakeCount(bob)).to.be.bignumber.equal(new BN(1));
+        expect(await this.reward.stakeCount(bytes32(bob))).to.be.bignumber.equal(new BN(1));
       });
 
       it('should disburse expected amount of reward token to first user', async function () {
@@ -1317,13 +1323,13 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res0,
           'Claimed',
-          { user: bob, token: this.stk.address, amount: new BN(5), shares: tokens(5) }
+          { user: bob, token: this.stk.address, amount: new BN(5), shares: e6(5) }
         );
 
         expectEvent(
           this.res1,
           'Claimed',
-          { user: alice, token: this.stk.address, amount: new BN(6), shares: tokens(6) }
+          { user: alice, token: this.stk.address, amount: new BN(6), shares: e6(6) }
         );
       });
 
@@ -1392,25 +1398,25 @@ describe('Aquarium integration', function () {
       });
 
       it('should have two stakes for user in reward module', async function () {
-        expect(await this.reward.stakeCount(alice)).to.be.bignumber.equal(new BN(2));
+        expect(await this.reward.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(2));
       });
 
       it('should return half the initial GYSR spent for first stake', async function () {
-        expect((await this.reward.stakes(alice, 0)).gysr).to.be.bignumber.equal(tokens(5))
+        expect((await this.reward.stakes(bytes32(alice), 0)).gysr).to.be.bignumber.equal(tokens(5))
       });
 
       it('should return new GYSR spent during claim for second stake', async function () {
-        expect((await this.reward.stakes(alice, 1)).gysr).to.be.bignumber.equal(tokens(20))
+        expect((await this.reward.stakes(bytes32(alice), 1)).gysr).to.be.bignumber.equal(tokens(20))
       });
 
       it('should return the initial GYSR multiplier for first stake', async function () {
-        expect((await this.reward.stakes(alice, 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
+        expect((await this.reward.stakes(bytes32(alice), 0)).bonus).to.be.bignumber.closeTo(bonus(this.mult0), BONUS_DELTA);
       });
 
       it('should return the new GYSR multiplier for second stake', async function () {
         const usage = (this.mult0 * 2 + this.mult1 * 5 - 7) / (this.mult0 * 2 + this.mult1 * 5); // transient usage during claim
         const mult = 1 + Math.log10(1 + ((20.0 * (0.01 * 11 / 4)) / (0.01 + usage)));
-        expect((await this.reward.stakes(alice, 1)).bonus).to.be.bignumber.closeTo(bonus(mult), BONUS_DELTA);
+        expect((await this.reward.stakes(bytes32(alice), 1)).bonus).to.be.bignumber.closeTo(bonus(mult), BONUS_DELTA);
       });
 
       it('should disburse expected amount of reward token to user', async function () {
@@ -1441,7 +1447,7 @@ describe('Aquarium integration', function () {
         expectEvent(
           this.res,
           'Claimed',
-          { user: alice, token: this.stk.address, amount: new BN(4), shares: tokens(4) }
+          { user: alice, token: this.stk.address, amount: new BN(4), shares: e6(4) }
         );
       });
 

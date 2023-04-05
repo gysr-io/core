@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 /**
  * @title Staking module info interface
@@ -16,38 +16,36 @@ pragma solidity 0.8.4;
  */
 interface IStakingModuleInfo {
     /**
-     * @notice convenience function to get token metadata in a single call
+     * @notice convenience function to get all token metadata in a single call
      * @param module address of staking module
-     * @return address
-     * @return name
-     * @return symbol
+     * @return addresses
+     * @return names
+     * @return symbols
      * @return decimals
      */
-    function token(address module)
+    function tokens(
+        address module
+    )
         external
         view
         returns (
-            address,
-            string memory,
-            string memory,
-            uint8
+            address[] memory,
+            string[] memory,
+            string[] memory,
+            uint8[] memory
         );
 
     /**
-     * @notice quote the share value for an amount of tokens
+     * @notice get all staking positions for user
      * @param module address of staking module
-     * @param addr account address of interest
-     * @param amount number of tokens. if zero, return entire share balance
-     * @return number of shares
+     * @param addr user address of interest
+     * @param data additional encoded data
+     * @return accounts_
+     * @return shares_
      */
-    function shares(
+    function positions(
         address module,
         address addr,
-        uint256 amount
-    ) external view returns (uint256);
-
-    /**
-     * @return current shares per token
-     */
-    function sharesPerToken(address module) external view returns (uint256);
+        bytes calldata data
+    ) external view returns (bytes32[] memory, uint256[] memory);
 }

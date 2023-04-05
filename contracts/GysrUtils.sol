@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "./MathUtils.sol";
 
@@ -20,8 +20,7 @@ library GysrUtils {
     using MathUtils for int128;
 
     // constants
-    uint256 public constant DECIMALS = 18;
-    uint256 public constant GYSR_PROPORTION = 10**(DECIMALS - 2); // 1%
+    uint256 public constant GYSR_PROPORTION = 1e16; // 1%
 
     /**
      * @notice compute GYSR bonus as a function of usage ratio, stake amount,
@@ -45,21 +44,21 @@ library GysrUtils {
             return 0;
         }
         if (gysr == 0) {
-            return 10**DECIMALS;
+            return 1e18;
         }
 
         // scale GYSR amount with respect to proportion
-        uint256 portion = (GYSR_PROPORTION * total) / 10**DECIMALS;
+        uint256 portion = (GYSR_PROPORTION * total) / 1e18;
         if (amount > portion) {
             gysr = (gysr * portion) / amount;
         }
 
         // 1 + gysr / (0.01 + ratio)
-        uint256 x = 2**64 + (2**64 * gysr) / (10**(DECIMALS - 2) + ratio);
+        uint256 x = 2 ** 64 + (2 ** 64 * gysr) / (1e16 + ratio);
 
         return
-            10**DECIMALS +
-            (uint256(int256(int128(uint128(x)).logbase10())) * 10**DECIMALS) /
-            2**64;
+            1e18 +
+            (uint256(int256(int128(uint128(x)).logbase10())) * 1e18) /
+            2 ** 64;
     }
 }

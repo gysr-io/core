@@ -6,11 +6,12 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import "./interfaces/IStakingModule.sol";
+import "./OwnerController.sol";
 
 /**
  * @title ERC721 staking module
@@ -19,9 +20,9 @@ import "./interfaces/IStakingModule.sol";
  * tokens in exchange for shares credited to their address. When the user
  * unstakes, these shares will be burned and a reward will be distributed.
  */
-contract ERC721StakingModule is IStakingModule {
+contract ERC721StakingModule is IStakingModule, OwnerController {
     // constant
-    uint256 public constant SHARES_PER_TOKEN = 10**18;
+    uint256 public constant SHARES_PER_TOKEN = 1e6;
 
     // members
     IERC721 private immutable _token;
@@ -58,12 +59,9 @@ contract ERC721StakingModule is IStakingModule {
     /**
      * @inheritdoc IStakingModule
      */
-    function balances(address user)
-        external
-        view
-        override
-        returns (uint256[] memory balances_)
-    {
+    function balances(
+        address user
+    ) external view override returns (uint256[] memory balances_) {
         balances_ = new uint256[](1);
         balances_[0] = counts[user];
     }
@@ -92,16 +90,16 @@ contract ERC721StakingModule is IStakingModule {
      * @inheritdoc IStakingModule
      */
     function stake(
-        address user,
+        address sender,
         uint256 amount,
         bytes calldata data
-    ) external override onlyOwner returns (address, uint256) {
+    ) external override onlyOwner returns (bytes32, uint256) {
         // validate
         require(amount > 0, "smn2");
-        require(amount <= _token.balanceOf(user), "smn3");
+        require(amount <= _token.balanceOf(sender), "smn3");
         require(data.length == 32 * amount, "smn4");
 
-        uint256 count = counts[user];
+        uint256 count = counts[sender];
 
         // stake
         for (uint256 i = 0; i < amount; i++) {
@@ -113,36 +111,37 @@ contract ERC721StakingModule is IStakingModule {
             }
 
             // ownership mappings
-            owners[id] = user;
+            owners[id] = sender;
             uint256 len = count + i;
-            tokenByOwner[user][len] = id;
+            tokenByOwner[sender][len] = id;
             tokenIndex[id] = len;
 
             // transfer to module
-            _token.transferFrom(user, address(this), id);
+            _token.transferFrom(sender, address(this), id);
         }
 
         // update position
-        counts[user] = count + amount;
+        counts[sender] = count + amount;
 
         // emit
+        bytes32 account = bytes32(uint256(uint160(sender)));
         uint256 shares = amount * SHARES_PER_TOKEN;
-        emit Staked(user, address(_token), amount, shares);
+        emit Staked(account, sender, address(_token), amount, shares);
 
-        return (user, shares);
+        return (account, shares);
     }
 
     /**
      * @inheritdoc IStakingModule
      */
     function unstake(
-        address user,
+        address sender,
         uint256 amount,
         bytes calldata data
-    ) external override onlyOwner returns (address, uint256) {
+    ) external override onlyOwner returns (bytes32, address, uint256) {
         // validate
         require(amount > 0, "smn5");
-        uint256 count = counts[user];
+        uint256 count = counts[sender];
         require(amount <= count, "smn6");
         require(data.length == 32 * amount, "smn7");
 
@@ -150,13 +149,15 @@ contract ERC721StakingModule is IStakingModule {
         for (uint256 i = 0; i < amount; i++) {
             // get token id
             uint256 id;
-            uint256 pos = 132 + 32 * i;
-            assembly {
-                id := calldataload(pos)
+            {
+                uint256 pos = 132 + 32 * i;
+                assembly {
+                    id := calldataload(pos)
+                }
             }
 
             // ownership
-            require(owners[id] == user, "smn8");
+            require(owners[id] == sender, "smn8");
             delete owners[id];
 
             // clean up ownership mappings
@@ -165,52 +166,59 @@ contract ERC721StakingModule is IStakingModule {
                 // reindex on partial unstake
                 uint256 index = tokenIndex[id];
                 if (index != lastIndex) {
-                    uint256 lastId = tokenByOwner[user][lastIndex];
-                    tokenByOwner[user][index] = lastId;
+                    uint256 lastId = tokenByOwner[sender][lastIndex];
+                    tokenByOwner[sender][index] = lastId;
                     tokenIndex[lastId] = index;
                 }
             }
-            delete tokenByOwner[user][lastIndex];
+            delete tokenByOwner[sender][lastIndex];
             delete tokenIndex[id];
 
             // transfer to user
-            _token.safeTransferFrom(address(this), user, id);
+            _token.safeTransferFrom(address(this), sender, id);
         }
 
         // update position
-        counts[user] = count - amount;
+        counts[sender] = count - amount;
 
         // emit
+        bytes32 account = bytes32(uint256(uint160(sender)));
         uint256 shares = amount * SHARES_PER_TOKEN;
-        emit Unstaked(user, address(_token), amount, shares);
+        emit Unstaked(account, sender, address(_token), amount, shares);
 
-        return (user, shares);
+        return (account, sender, shares);
     }
 
     /**
      * @inheritdoc IStakingModule
      */
     function claim(
-        address user,
+        address sender,
         uint256 amount,
         bytes calldata
-    ) external override onlyOwner returns (address, uint256) {
+    ) external override onlyOwner returns (bytes32, address, uint256) {
         // validate
         require(amount > 0, "smn9");
-        require(amount <= counts[user], "smn10");
+        require(amount <= counts[sender], "smn10");
 
+        bytes32 account = bytes32(uint256(uint160(sender)));
         uint256 shares = amount * SHARES_PER_TOKEN;
-        emit Claimed(user, address(_token), amount, shares);
-        return (user, shares);
+        emit Claimed(account, sender, address(_token), amount, shares);
+        return (account, sender, shares);
     }
 
     /**
      * @inheritdoc IStakingModule
      */
-    function update(address) external override {}
+    function update(
+        address sender,
+        bytes calldata
+    ) external pure override returns (bytes32) {
+        return (bytes32(uint256(uint160(sender))));
+    }
 
     /**
      * @inheritdoc IStakingModule
      */
-    function clean() external override {}
+    function clean(bytes calldata) external override {}
 }

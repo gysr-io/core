@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 /**
  * @title Module factory interface
@@ -20,8 +20,11 @@ interface IModuleFactory {
 
     /**
      * @notice create a new Pool module
+     * @param config address for configuration contract
      * @param data binary encoded construction parameters
      * @return address of newly created module
      */
-    function createModule(bytes calldata data) external returns (address);
+    function createModule(address config, bytes calldata data)
+        external
+        returns (address);
 }

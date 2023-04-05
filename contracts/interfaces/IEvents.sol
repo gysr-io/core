@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
  */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 /**
  * @title GYSR event system
@@ -16,23 +16,27 @@ pragma solidity 0.8.4;
 interface IEvents {
     // staking
     event Staked(
+        bytes32 indexed account,
         address indexed user,
         address indexed token,
         uint256 amount,
         uint256 shares
     );
     event Unstaked(
+        bytes32 indexed account,
         address indexed user,
         address indexed token,
         uint256 amount,
         uint256 shares
     );
     event Claimed(
+        bytes32 indexed account,
         address indexed user,
         address indexed token,
         uint256 amount,
         uint256 shares
     );
+    event Updated(bytes32 indexed account, address indexed user);
 
     // rewards
     event RewardsDistributed(
@@ -47,13 +51,19 @@ interface IEvents {
         uint256 shares,
         uint256 timestamp
     );
-    event RewardsUnlocked(address indexed token, uint256 shares);
     event RewardsExpired(
         address indexed token,
         uint256 amount,
         uint256 shares,
         uint256 timestamp
     );
+    event RewardsWithdrawn(
+        address indexed token,
+        uint256 amount,
+        uint256 shares,
+        uint256 timestamp
+    );
+    event RewardsUpdated(bytes32 indexed account);
 
     // gysr
     event GysrSpent(address indexed user, uint256 amount);

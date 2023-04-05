@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 /**
  * @title Pool interface
@@ -27,10 +27,9 @@ interface IPool {
     /**
      * @return staking balances for user
      */
-    function stakingBalances(address user)
-        external
-        view
-        returns (uint256[] memory);
+    function stakingBalances(
+        address user
+    ) external view returns (uint256[] memory);
 
     /**
      * @return total staking balances for Pool
@@ -95,13 +94,23 @@ interface IPool {
 
     /**
      * @notice method called ad hoc to update user accounting
+     * @param stakingdata data passed to staking module
+     * @param rewarddata data passed to reward module
      */
-    function update() external;
+    function update(
+        bytes calldata stakingdata,
+        bytes calldata rewarddata
+    ) external;
 
     /**
      * @notice method called ad hoc to clean up and perform additional accounting
+     * @param stakingdata data passed to staking module
+     * @param rewarddata data passed to reward module
      */
-    function clean() external;
+    function clean(
+        bytes calldata stakingdata,
+        bytes calldata rewarddata
+    ) external;
 
     /**
      * @return gysr balance available for withdrawal
@@ -113,4 +122,24 @@ interface IPool {
      * @param amount number of GYSR to withdraw
      */
     function withdraw(uint256 amount) external;
+
+    /**
+     * @notice transfer control of the staking module to another account
+     * @param newController address of new controller
+     */
+    function transferControlStakingModule(address newController) external;
+
+    /**
+     * @notice transfer control of the reward module to another account
+     * @param newController address of new controller
+     */
+    function transferControlRewardModule(address newController) external;
+
+    /**
+     * @notice execute multiple operations in a single call
+     * @param data array of encoded function data
+     */
+    function multicall(
+        bytes[] calldata data
+    ) external returns (bytes[] memory results);
 }

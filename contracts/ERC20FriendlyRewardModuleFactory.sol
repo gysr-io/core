@@ -6,7 +6,7 @@ https://github.com/gysr-io/core
 SPDX-License-Identifier: MIT
 */
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.18;
 
 import "./interfaces/IModuleFactory.sol";
 import "./ERC20FriendlyRewardModule.sol";
@@ -24,11 +24,10 @@ contract ERC20FriendlyRewardModuleFactory is IModuleFactory {
     /**
      * @inheritdoc IModuleFactory
      */
-    function createModule(bytes calldata data)
-        external
-        override
-        returns (address)
-    {
+    function createModule(
+        address config,
+        bytes calldata data
+    ) external override returns (address) {
         // validate
         require(data.length == 96, "frmf1");
 
@@ -37,19 +36,19 @@ contract ERC20FriendlyRewardModuleFactory is IModuleFactory {
         uint256 penaltyStart;
         uint256 penaltyPeriod;
         assembly {
-            token := calldataload(68)
-            penaltyStart := calldataload(100)
-            penaltyPeriod := calldataload(132)
+            token := calldataload(100)
+            penaltyStart := calldataload(132)
+            penaltyPeriod := calldataload(164)
         }
 
         // create module
-        ERC20FriendlyRewardModule module =
-            new ERC20FriendlyRewardModule(
-                token,
-                penaltyStart,
-                penaltyPeriod,
-                address(this)
-            );
+        ERC20FriendlyRewardModule module = new ERC20FriendlyRewardModule(
+            token,
+            penaltyStart,
+            penaltyPeriod,
+            config,
+            address(this)
+        );
         module.transferOwnership(msg.sender);
 
         // output

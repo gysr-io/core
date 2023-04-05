@@ -1,6 +1,6 @@
 // unit tests for ERC20StakingModule
 
-const { accounts, contract, web3 } = require('@openzeppelin/test-environment');
+const { artifacts, web3 } = require('hardhat');
 const { BN, time, expectEvent, expectRevert, constants } = require('@openzeppelin/test-helpers');
 const { expect } = require('chai');
 
@@ -13,14 +13,15 @@ const {
   fromFixedPointBigNumber,
   fromBonus,
   fromTokens,
+  bytes32,
   DECIMALS
 } = require('../util/helper');
 
-const ERC20StakingModule = contract.fromArtifact('ERC20StakingModule');
-const TestToken = contract.fromArtifact('TestToken');
-const TestElasticToken = contract.fromArtifact('TestElasticToken')
-const TestFeeToken = contract.fromArtifact('TestFeeToken');
-const TestIndivisibleToken = contract.fromArtifact('TestIndivisibleToken');
+const ERC20StakingModule = artifacts.require('ERC20StakingModule');
+const TestToken = artifacts.require('TestToken');
+const TestElasticToken = artifacts.require('TestElasticToken')
+const TestFeeToken = artifacts.require('TestFeeToken');
+const TestIndivisibleToken = artifacts.require('TestIndivisibleToken');
 
 
 // tolerance
@@ -29,7 +30,10 @@ const SHARE_DELTA = toFixedPointBigNumber(0.000001 * (10 ** 6), 10, DECIMALS);
 
 
 describe('ERC20StakingModule', function () {
-  const [org, owner, controller, bob, alice, factory] = accounts;
+  let org, owner, alice, bob, other, router, factory;
+  before(async function () {
+    [org, owner, alice, bob, other, router, factory] = await web3.eth.getAccounts();
+  });
 
   beforeEach('setup', async function () {
     this.token = await TestToken.new({ from: org });
@@ -76,8 +80,42 @@ describe('ERC20StakingModule', function () {
     })
   });
 
+  describe('approve', function () {
+
+    beforeEach(async function () {
+      this.module = await ERC20StakingModule.new(
+        this.token.address,
+        factory,
+        { from: owner }
+      );
+    });
+
+    describe('when user approves an operator', function () {
+
+      beforeEach(async function () {
+        this.res = await this.module.approve(router, true, { from: alice });
+      });
+
+      it('should set the approval state for sender and operator to true', async function () {
+        expect(await this.module.approvals(alice, router)).to.equal(true);
+      });
+
+      it('should not affect the approval state for other user', async function () {
+        expect(await this.module.approvals(bob, router)).to.equal(false);
+      });
+
+      it('should emit Aporoval event', async function () {
+        expectEvent(
+          this.res,
+          'Approval',
+          { user: alice, operator: router, value: true }
+        );
+      });
+    })
+  });
+
+
   describe('staking with standard token', function () {
-    const [owner, org, treasury, alice, bob, other] = accounts;
 
     beforeEach('setup', async function () {
       // owner creates staking module with standard token
@@ -110,11 +148,40 @@ describe('ERC20StakingModule', function () {
         it('should fail', async function () {
           await expectRevert(
             this.module.stake(bob, tokens(1001), [], { from: owner }),
-            'ERC20: transfer amount exceeds balance.'
+            'ERC20: transfer amount exceeds balance'
           );
         });
       });
 
+      describe('when invalid encoded data is passed', function () {
+        it('should fail', async function () {
+          await expectRevert(
+            this.module.stake(bob, tokens(100), '0xabc', { from: owner }),
+            'sm7'
+          );
+        });
+      });
+
+      describe('when unapproved operator tries to stake for user', function () {
+        it('should fail', async function () {
+          const data = web3.eth.abi.encodeParameters(['address'], [alice]);
+          await expectRevert(
+            this.module.stake(router, tokens(100), data, { from: owner }),
+            'sm8'
+          );
+        });
+      });
+
+      describe('when approved operator tries to stake for a different user', function () {
+        it('should fail', async function () {
+          await this.module.approve(router, true, { from: alice });
+          const data = web3.eth.abi.encodeParameters(['address'], [bob]);
+          await expectRevert(
+            this.module.stake(router, tokens(100), data, { from: owner }),
+            'sm8'
+          );
+        });
+      });
 
       describe('when multiple users stake', function () {
 
@@ -161,6 +228,67 @@ describe('ERC20StakingModule', function () {
 
       });
 
+      describe('when operator stakes for user', function () {
+
+        beforeEach(async function () {
+          await this.module.approve(router, true, { from: alice });
+          await this.token.approve(this.module.address, tokens(100000), { from: router });
+
+          await this.token.transfer(router, tokens(10000), { from: org });
+          const data0 = web3.eth.abi.encodeParameters(['address'], [alice]);
+          this.res0 = await this.module.stake(router, tokens(100), data0, { from: owner }); // operator stake
+
+          this.res1 = await this.module.stake(bob, tokens(200), [], { from: owner });
+        });
+
+        it('should decrease operator token balance', async function () {
+          expect(await this.token.balanceOf(router)).to.be.bignumber.equal(tokens(9900));
+        });
+
+        it('should not affect user token balance for operator stake', async function () {
+          expect(await this.token.balanceOf(alice)).to.be.bignumber.equal(tokens(1000));
+        });
+
+        it('should decrease user token balance for direct stake', async function () {
+          expect(await this.token.balanceOf(bob)).to.be.bignumber.equal(tokens(800));
+        });
+
+        it('should update total staking balance', async function () {
+          expect((await this.module.totals())[0]).to.be.bignumber.equal(tokens(300));
+        });
+
+        it('should update staking balances for each user', async function () {
+          expect((await this.module.balances(alice))[0]).to.be.bignumber.equal(tokens(100));
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(tokens(200));
+        });
+
+        it('should update the total staking shares for each user', async function () {
+          expect(await this.module.shares(alice)).to.be.bignumber.equal(shares(100));
+          expect(await this.module.shares(bob)).to.be.bignumber.equal(shares(200));
+        });
+
+        it('should combine to increase the total staking shares', async function () {
+          expect(await this.module.totalShares()).to.be.bignumber.equal(shares(300));
+        });
+
+        it('should emit first Staked event with operator sender', async function () {
+          expectEvent(
+            this.res0,
+            'Staked',
+            { account: bytes32(alice), user: router, token: this.token.address, amount: tokens(100), shares: shares(100) }
+          );
+        });
+
+        it('should emit second Staked event with normal user sender', async function () {
+          expectEvent(
+            this.res1,
+            'Staked',
+            { account: bytes32(bob), user: bob, token: this.token.address, amount: tokens(200), shares: shares(200) }
+          );
+        });
+
+      });
+
     });
 
 
@@ -189,6 +317,27 @@ describe('ERC20StakingModule', function () {
           await expectRevert(
             this.module.unstake(alice, tokens(101), [], { from: owner }),
             'sm6' // ERC20StakingModule: unstake amount exceeds balance
+          );
+        });
+      });
+
+      describe('when unapproved operator tries to unstake for user', function () {
+        it('should fail', async function () {
+          const data = web3.eth.abi.encodeParameters(['address'], [alice]);
+          await expectRevert(
+            this.module.unstake(router, tokens(100), data, { from: owner }),
+            'sm8'
+          );
+        });
+      });
+
+      describe('when approved operator tries to unstake for a different user', function () {
+        it('should fail', async function () {
+          await this.module.approve(router, true, { from: alice });
+          const data = web3.eth.abi.encodeParameters(['address'], [bob]);
+          await expectRevert(
+            this.module.unstake(router, tokens(100), data, { from: owner }),
+            'sm8'
           );
         });
       });
@@ -269,12 +418,60 @@ describe('ERC20StakingModule', function () {
           expectEvent(
             this.res,
             'Unstaked',
-            { user: alice, token: this.token.address, amount: tokens(75), shares: shares(75) }
+            { account: bytes32(alice), user: alice, token: this.token.address, amount: tokens(75), shares: shares(75) }
+          );
+        });
+
+      });
+
+      describe('when operator unstakes for user', function () {
+
+        beforeEach(async function () {
+          // operator unstake
+          await this.module.approve(router, true, { from: alice });
+          const data = web3.eth.abi.encodeParameters(['address'], [alice]);
+          this.res = await this.module.unstake(router, tokens(75), data, { from: owner });
+        });
+
+        it('should send staking token balance to operator', async function () {
+          expect(await this.token.balanceOf(router)).to.be.bignumber.equal(tokens(75));
+        });
+
+        it('should not increase user token balance', async function () {
+          expect(await this.token.balanceOf(alice)).to.be.bignumber.equal(tokens(900));
+        });
+
+        it('should decrease staking balance for user', async function () {
+          expect((await this.module.balances(alice))[0]).to.be.bignumber.equal(tokens(25));
+        });
+
+        it('should decrease total staking balance', async function () {
+          expect((await this.module.totals())[0]).to.be.bignumber.equal(tokens(225));
+        });
+
+        it('should not affect staking balances for other users', async function () {
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(tokens(200));
+        });
+
+        it('should decrease the total staking shares for user', async function () {
+          expect(await this.module.shares(alice)).to.be.bignumber.equal(shares(25));
+        });
+
+        it('should decrease the total staking shares', async function () {
+          expect(await this.module.totalShares()).to.be.bignumber.equal(shares(225));
+        });
+
+        it('should emit Unstaked event', async function () {
+          expectEvent(
+            this.res,
+            'Unstaked',
+            { account: bytes32(alice), user: router, token: this.token.address, amount: tokens(75), shares: shares(75) }
           );
         });
 
       });
     });
+
 
     describe('claim', function () {
 
@@ -301,6 +498,27 @@ describe('ERC20StakingModule', function () {
           await expectRevert(
             this.module.claim(alice, tokens(101), [], { from: owner }),
             'sm6' // ERC20StakingModule: unstake amount exceeds balance
+          );
+        });
+      });
+
+      describe('when unapproved operator tries to claim for user', function () {
+        it('should fail', async function () {
+          const data = web3.eth.abi.encodeParameters(['address'], [alice]);
+          await expectRevert(
+            this.module.claim(router, tokens(100), data, { from: owner }),
+            'sm8'
+          );
+        });
+      });
+
+      describe('when approved operator tries to claim for a different user', function () {
+        it('should fail', async function () {
+          await this.module.approve(router, true, { from: alice });
+          const data = web3.eth.abi.encodeParameters(['address'], [bob]);
+          await expectRevert(
+            this.module.claim(router, tokens(100), data, { from: owner }),
+            'sm8'
           );
         });
       });
@@ -381,13 +599,31 @@ describe('ERC20StakingModule', function () {
           expectEvent(
             this.res,
             'Claimed',
-            { user: alice, token: this.token.address, amount: tokens(75), shares: shares(75) }
+            { account: bytes32(alice), user: alice, token: this.token.address, amount: tokens(75), shares: shares(75) }
           );
         });
 
       });
-    });
 
+      describe('when operator claims for user', function () {
+
+        beforeEach(async function () {
+          // operator unstake
+          await this.module.approve(router, true, { from: alice });
+          const data = web3.eth.abi.encodeParameters(['address'], [alice]);
+          this.res = await this.module.claim(router, tokens(99.99), data, { from: owner });
+        });
+
+        it('should emit Claimed event with operator as sender', async function () {
+          expectEvent(
+            this.res,
+            'Claimed',
+            { account: bytes32(alice), user: router, token: this.token.address, amount: tokens(99.99), shares: shares(99.99) }
+          );
+        });
+      });
+
+    });
   });
 
 
