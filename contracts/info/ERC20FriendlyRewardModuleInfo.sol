@@ -195,7 +195,7 @@ library ERC20FriendlyRewardModuleInfo {
     ) public view returns (uint256) {
         ERC20FriendlyRewardModule m = ERC20FriendlyRewardModule(module);
         if (m.totalStakingShares() == 0) {
-            return 0;
+            return m.rewardsPerStakedShare();
         }
         uint256 rewardsToUnlock = unlockable(module) + m.rewardDust();
         return

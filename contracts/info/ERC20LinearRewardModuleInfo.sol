@@ -158,4 +158,28 @@ library ERC20LinearRewardModuleInfo {
 
         return (t > m.period(), t);
     }
+
+    /**
+     * @notice get withdrawable excess budget
+     * @param module address of linear reward module
+     * @return withdrawable budget in tokens
+     */
+    function withdrawable(address module) public view returns (uint256) {
+        ERC20LinearRewardModule m = ERC20LinearRewardModule(module);
+
+        // earned since last update
+        uint256 budget = m.rewardShares() - m.earned();
+        uint256 dt = block.timestamp - m.lastUpdated();
+        uint256 earned = (m.stakingShares() * dt * m.rate()) / 1e18;
+        if (budget < earned) return 0; // already depleted
+        budget -= earned;
+
+        // committed rolling period
+        uint256 committed = (m.stakingShares() * m.period() * m.rate()) / 1e18;
+        if (budget < committed) return 0;
+        budget -= committed;
+
+        IERC20 tkn = IERC20(m.tokens()[0]);
+        return (budget * tkn.balanceOf(module)) / m.rewardShares();
+    }
 }

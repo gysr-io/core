@@ -1475,8 +1475,8 @@ describe('ERC20BondStakingModule', function () {
           const e = this.res.logs.filter(l => l.event === 'Unstaked')[0];
           expect(e.args.user).eq(alice);
           expect(e.args.token).eq(this.token.address);
-          expect(e.args.amount).to.be.bignumber.closeTo(tokens(27), TOKEN_DELTA);
-          expect(e.args.shares).to.be.bignumber.equal(shares(30));
+          expect(e.args.amount).to.be.bignumber.equal(tokens(27)); // exact
+          expect(e.args.shares).to.be.bignumber.closeTo(shares(30), SHARE_DELTA);
         });
 
       });

@@ -183,7 +183,7 @@ describe('ERC20LinearRewardModuleInfo', function () {
 
       it('should return expected reward amount', async function () {
         const r = 0.0002 * days(7) + 0.0004 * days(7);
-        expect(this.res).to.be.bignumber.closeTo(tokens(r), shares(0.0004));
+        expect(this.res).to.be.bignumber.closeTo(tokens(r), tokens(0.0004));
       });
 
     });
@@ -197,7 +197,7 @@ describe('ERC20LinearRewardModuleInfo', function () {
 
       it('should return expected reward amount', async function () {
         const r = 0.0003 * days(14);
-        expect(this.res).to.be.bignumber.closeTo(tokens(r), shares(0.0003));
+        expect(this.res).to.be.bignumber.closeTo(tokens(r), tokens(0.0003));
       });
 
     });
@@ -209,9 +209,23 @@ describe('ERC20LinearRewardModuleInfo', function () {
         this.res = await this.info.runway(this.module.address);
       });
 
-      it('should return half of funding amount', async function () {
+      it('should return remaining seconds', async function () {
         const t = (5000 - 0.0005 * days(7) - 0.0007 * days(7)) / 0.0007;
         expect(this.res).to.be.bignumber.closeTo(new BN(t), new BN(1));
+      });
+
+    });
+
+    describe('when getting estimated withdrawable budget', function () {
+
+      beforeEach(async function () {
+        // estimate runway
+        this.res = await this.info.withdrawable(this.module.address);
+      });
+
+      it('should return uncommitted tokens', async function () {
+        const w = (5000 - 0.0005 * days(7) - 0.0007 * days(7) - 0.0007 * days(14));
+        expect(this.res).to.be.bignumber.closeTo(tokens(w), TOKEN_DELTA);
       });
 
     });
@@ -222,7 +236,7 @@ describe('ERC20LinearRewardModuleInfo', function () {
         this.res = await this.info.validate(this.module.address, shares(0.0001));
       });
 
-      it('should return false', async function () {
+      it('should return true', async function () {
         expect(this.res[0]).to.equal(true);
       });
 
@@ -292,7 +306,7 @@ describe('ERC20LinearRewardModuleInfo', function () {
 
       it('should return expected reward amount', async function () {
         const r = 5 / 8 * 1000;
-        expect(this.res).to.be.bignumber.closeTo(tokens(r), shares(0.0005));
+        expect(this.res).to.be.bignumber.closeTo(tokens(r), tokens(0.0005));
       });
 
     });
@@ -306,7 +320,7 @@ describe('ERC20LinearRewardModuleInfo', function () {
 
       it('should return expected reward amount', async function () {
         const r = 3 / 8 * 1000;
-        expect(this.res).to.be.bignumber.closeTo(tokens(r), shares(0.0003));
+        expect(this.res).to.be.bignumber.closeTo(tokens(r), tokens(0.0003));
       });
 
     });
@@ -319,6 +333,18 @@ describe('ERC20LinearRewardModuleInfo', function () {
       });
 
       it('should return zero seconds', async function () {
+        expect(this.res).to.be.bignumber.equal(new BN(0));
+      });
+
+    });
+
+    describe('when getting estimated withdrawable budget', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.withdrawable(this.module.address);
+      });
+
+      it('should return zero', async function () {
         expect(this.res).to.be.bignumber.equal(new BN(0));
       });
 

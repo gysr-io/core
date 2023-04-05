@@ -260,6 +260,15 @@ describe('ERC20FixedRewardModule', function () {
       await time.increase(days(1));
     });
 
+    describe('when sender does not own module', function () {
+      it('should fail', async function () {
+        await expectRevert(
+          this.module.stake(bytes32(alice), alice, shares(100), [], { from: alice }),
+          'oc1'
+        )
+      });
+    });
+
     describe('when stake exceeds budget', function () {
       it('should revert', async function () {
         await expectRevert(
@@ -297,7 +306,8 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should create user position stake', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(200));
+        expect(pos.debt).to.be.bignumber.equal(shares(200));
+        expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t0);
         expect(pos.updated).to.be.bignumber.equal(this.t0);
@@ -327,7 +337,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should create alice position stake', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(200));
+        expect(pos.debt).to.be.bignumber.equal(shares(200));
         expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t0);
@@ -336,7 +346,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should create bob position stake', async function () {
         const pos = await this.module.positions(bytes32(bob));
-        expect(pos.shares).to.be.bignumber.equal(shares(100));
+        expect(pos.debt).to.be.bignumber.equal(shares(100));
         expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t1);
@@ -366,11 +376,11 @@ describe('ERC20FixedRewardModule', function () {
         expect((await this.module.balances())[0]).to.be.bignumber.equal(tokens(750));
       });
 
-      it('should increase and update user position', async function () {
+      it('should rollover and update user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(250));
-        expect(pos.vested).to.be.bignumber.equal(shares(20));
-        expect(pos.earned).to.be.bignumber.equal(shares(20));
+        expect(pos.debt).to.be.bignumber.closeTo(shares(230), SHARE_DELTA);
+        expect(pos.vested).to.be.bignumber.closeTo(shares(20), SHARE_DELTA);
+        expect(pos.earned).to.be.bignumber.closeTo(shares(20), SHARE_DELTA);
         expect(pos.timestamp).to.be.bignumber.equal(this.t1);
         expect(pos.updated).to.be.bignumber.equal(this.t1);
       });
@@ -398,11 +408,103 @@ describe('ERC20FixedRewardModule', function () {
         expect((await this.module.balances())[0]).to.be.bignumber.equal(tokens(800));
       });
 
-      it('should increase and update user position', async function () {
+      it('should vest and update user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(200));
+        expect(pos.debt).to.be.bignumber.equal(shares(75));
         expect(pos.vested).to.be.bignumber.equal(shares(125));
         expect(pos.earned).to.be.bignumber.equal(shares(125));
+        expect(pos.timestamp).to.be.bignumber.equal(this.t1);
+        expect(pos.updated).to.be.bignumber.equal(this.t1);
+      });
+
+    });
+
+    describe('when one user stakes again after claim', function () {
+
+      beforeEach(async function () {
+        // create stake for alice with 125 token reward
+        await this.module.stake(bytes32(alice), alice, shares(125), [], { from: owner });
+        this.t0 = (await this.module.positions(bytes32(alice))).timestamp;
+        await setupTime(this.t0, days(5));
+
+        // claim
+        await this.module.claim(bytes32(alice), alice, alice, new BN(0), [], { from: owner });
+        await setupTime(this.t0, days(8));
+        // reward: 0.5 * 125
+        // vested: 0.8 * 125
+
+        // increase stake for alice by 75 tokens
+        await this.module.stake(bytes32(alice), alice, shares(75), [], { from: owner });
+        this.t1 = (await this.module.positions(bytes32(alice))).timestamp;
+      });
+
+      it('should increase user reward token balance', async function () {
+        expect(await this.token.balanceOf(alice)).to.be.bignumber.closeTo(tokens(62.5), TOKEN_DELTA);
+      });
+
+      it('should decrease module reward token balance', async function () {
+        expect(await this.token.balanceOf(this.module.address)).to.be.bignumber.closeTo(tokens(1000 - 62.5), TOKEN_DELTA);
+      });
+
+      it('should decrease total reward debt by claim and increase by new stake', async function () {
+        expect(await this.module.debt()).to.be.bignumber.closeTo(shares(125 - 62.5 + 75), SHARE_DELTA);
+      });
+
+      it('should decrease available reward balance', async function () {
+        expect((await this.module.balances())[0]).to.be.bignumber.equal(tokens(800));
+      });
+
+      it('should increase and update user position', async function () {
+        const pos = await this.module.positions(bytes32(alice));
+        expect(pos.debt).to.be.bignumber.closeTo(shares(0.2 * 125 + 75), SHARE_DELTA);
+        expect(pos.vested).to.be.bignumber.closeTo(shares(0.8 * 125), SHARE_DELTA);
+        expect(pos.earned).to.be.bignumber.closeTo(shares(0.3 * 125), SHARE_DELTA); // since claim
+        expect(pos.timestamp).to.be.bignumber.equal(this.t1);
+        expect(pos.updated).to.be.bignumber.equal(this.t1);
+      });
+
+    });
+
+    describe('when one user stakes again after claim and fully vested', function () {
+
+      beforeEach(async function () {
+        // create stake for alice with 125 token reward
+        await this.module.stake(bytes32(alice), alice, shares(125), [], { from: owner });
+        this.t0 = (await this.module.positions(bytes32(alice))).timestamp;
+        await setupTime(this.t0, days(4));
+
+        // claim
+        await this.module.claim(bytes32(alice), alice, alice, new BN(0), [], { from: owner });
+        await setupTime(this.t0, days(12));
+        // reward: 0.4 * 125
+        // vested: 125
+
+        // increase stake for alice by 75 tokens
+        await this.module.stake(bytes32(alice), alice, shares(75), [], { from: owner });
+        this.t1 = (await this.module.positions(bytes32(alice))).timestamp;
+      });
+
+      it('should increase user reward token balance', async function () {
+        expect(await this.token.balanceOf(alice)).to.be.bignumber.closeTo(tokens(50), TOKEN_DELTA);
+      });
+
+      it('should decrease module reward token balance', async function () {
+        expect(await this.token.balanceOf(this.module.address)).to.be.bignumber.closeTo(tokens(1000 - 50), TOKEN_DELTA);
+      });
+
+      it('should decrease total reward debt by claim and increase by new stake', async function () {
+        expect(await this.module.debt()).to.be.bignumber.closeTo(shares(125 - 50 + 75), SHARE_DELTA);
+      });
+
+      it('should decrease available reward balance', async function () {
+        expect((await this.module.balances())[0]).to.be.bignumber.equal(tokens(800));
+      });
+
+      it('should increase and update user position', async function () {
+        const pos = await this.module.positions(bytes32(alice));
+        expect(pos.debt).to.be.bignumber.equal(shares(75)); // exact
+        expect(pos.vested).to.be.bignumber.equal(shares(125));
+        expect(pos.earned).to.be.bignumber.closeTo(shares(0.6 * 125), SHARE_DELTA); // since claim
         expect(pos.timestamp).to.be.bignumber.equal(this.t1);
         expect(pos.updated).to.be.bignumber.equal(this.t1);
       });
@@ -446,6 +548,15 @@ describe('ERC20FixedRewardModule', function () {
       this.t2 = (await this.module.positions(bytes32(alice))).timestamp;
     });
 
+    describe('when sender does not own module', function () {
+      it('should fail', async function () {
+        await expectRevert(
+          this.module.unstake(bytes32(alice), alice, alice, shares(100), [], { from: alice }),
+          'oc1'
+        )
+      });
+    });
+
     describe('when one user unstakes all', function () {
 
       beforeEach(async function () {
@@ -457,7 +568,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should delete user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(new BN(0));
+        expect(pos.debt).to.be.bignumber.equal(new BN(0));
         expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(new BN(0));
@@ -507,8 +618,8 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should decrease and update user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(150));
-        expect(pos.vested).to.be.bignumber.equal(shares(60));
+        expect(pos.debt).to.be.bignumber.closeTo(shares(45), SHARE_DELTA);
+        expect(pos.vested).to.be.bignumber.closeTo(shares(60), SHARE_DELTA);
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t2);
         expect(pos.updated).to.be.bignumber.equal(this.t3);
@@ -576,7 +687,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should delete user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(new BN(0));
+        expect(pos.debt).to.be.bignumber.equal(new BN(0));
         expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(new BN(0));
@@ -649,7 +760,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should delete bob position', async function () {
         const pos = await this.module.positions(bytes32(bob));
-        expect(pos.shares).to.be.bignumber.equal(new BN(0));
+        expect(pos.debt).to.be.bignumber.equal(new BN(0));
         expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(new BN(0));
@@ -658,7 +769,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should decrease and update alice position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(200));
+        expect(pos.debt).to.be.bignumber.closeTo(shares(0.3 * 90), SHARE_DELTA);
         expect(pos.vested).to.be.bignumber.closeTo(shares(110), SHARE_DELTA);
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t2);
@@ -707,6 +818,8 @@ describe('ERC20FixedRewardModule', function () {
 
     });
 
+    // TODO unstake after full claim
+
   });
 
 
@@ -744,6 +857,15 @@ describe('ERC20FixedRewardModule', function () {
       this.t2 = (await this.module.positions(bytes32(alice))).timestamp;
     });
 
+    describe('when sender does not own module', function () {
+      it('should fail', async function () {
+        await expectRevert(
+          this.module.claim(bytes32(alice), alice, alice, new BN(0), [], { from: alice }),
+          'oc1'
+        )
+      });
+    });
+
     describe('when one user claims', function () {
 
       beforeEach(async function () {
@@ -755,8 +877,8 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should update user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(50)); // staking share units
-        expect(pos.vested).to.be.bignumber.closeTo(shares(32), SHARE_DELTA);
+        expect(pos.debt).to.be.bignumber.closeTo(shares(45), SHARE_DELTA); // reward share units
+        expect(pos.vested).to.be.bignumber.closeTo(shares(160), SHARE_DELTA);
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t2);
         expect(pos.updated).to.be.bignumber.closeTo(this.t0.add(days(13)), new BN(1));
@@ -809,8 +931,8 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should update user position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(50));
-        expect(pos.vested).to.be.bignumber.equal(shares(32));
+        expect(pos.debt).to.be.bignumber.equal(shares(0));
+        expect(pos.vested).to.be.bignumber.closeTo(shares(160), SHARE_DELTA);
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t2);
         expect(pos.updated).to.be.bignumber.equal(this.t2.add(days(10))); // should be exact
@@ -870,8 +992,8 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should update alice position', async function () {
         const pos = await this.module.positions(bytes32(alice));
-        expect(pos.shares).to.be.bignumber.equal(shares(50)); // staking shares
-        expect(pos.vested).to.be.bignumber.equal(shares(32));
+        expect(pos.debt).to.be.bignumber.closeTo(shares(250 - 178), SHARE_DELTA); // reward shares
+        expect(pos.vested).to.be.bignumber.closeTo(shares(160), SHARE_DELTA);
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t2);
         expect(pos.updated).to.be.bignumber.closeTo(this.t0.add(days(10)), new BN(1));
@@ -879,7 +1001,7 @@ describe('ERC20FixedRewardModule', function () {
 
       it('should update bob position', async function () {
         const pos = await this.module.positions(bytes32(bob));
-        expect(pos.shares).to.be.bignumber.equal(shares(20)); // staking shares
+        expect(pos.debt).to.be.bignumber.closeTo(shares(100 - 90), SHARE_DELTA); // reward shares
         expect(pos.vested).to.be.bignumber.equal(new BN(0));
         expect(pos.earned).to.be.bignumber.equal(new BN(0));
         expect(pos.timestamp).to.be.bignumber.equal(this.t1);

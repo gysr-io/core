@@ -31,9 +31,9 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
 
     // user position
     struct Position {
-        uint256 shares;
-        uint256 vested;
-        uint256 earned;
+        uint256 debt; // reward shares
+        uint256 vested; // reward shares
+        uint256 earned; // reward shares
         uint128 timestamp;
         uint128 updated;
     }
@@ -137,18 +137,24 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
         require(reward <= rewards - debt, "xrm3");
 
         Position storage pos = positions[account];
-        uint256 s = pos.shares;
-        if (s > 0) {
-            uint256 dt = (
-                block.timestamp < pos.timestamp + period
-                    ? block.timestamp
-                    : pos.timestamp + period
-            ) - pos.updated;
-            uint256 vested = pos.vested;
-            pos.earned += ((((s - vested) * dt) / period) * rate) / 1e18;
-            pos.vested = vested + ((s - vested) * dt) / period;
+        uint256 d = pos.debt;
+        if (d > 0) {
+            uint256 end = pos.timestamp + period;
+            if (block.timestamp > end) {
+                pos.earned += d;
+                pos.vested += (d * period) / (end - pos.updated);
+                d = 0;
+            } else {
+                uint256 last = pos.updated;
+                uint256 e = (d * (block.timestamp - last)) / (end - last);
+                pos.earned += e;
+                pos.vested +=
+                    (d * (block.timestamp - pos.timestamp)) /
+                    (end - last);
+                d -= e;
+            }
         }
-        pos.shares = s + shares;
+        pos.debt = d + reward;
         pos.timestamp = uint128(block.timestamp);
         pos.updated = uint128(block.timestamp);
 
@@ -167,41 +173,57 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
         bytes calldata
     ) external override onlyOwner returns (uint256, uint256) {
         Position storage pos = positions[account];
-        uint256 s = pos.shares;
-        assert(shares <= s); // note: we assume shares has been validated upstream
         require(pos.timestamp < block.timestamp);
 
-        // get all pending rewards
-        uint256 updated = pos.updated;
-        uint256 end = pos.timestamp + period;
-        uint256 dt = (block.timestamp < end ? block.timestamp : end) - updated;
-        uint256 r = pos.earned +
-            ((((s - pos.vested) * dt) / period) * rate) /
-            1e18;
-
-        // remove any lost unvested debt
-        if (block.timestamp < end) {
-            uint256 unvested = shares < pos.vested ? 0 : shares - pos.vested;
-            uint256 remaining = end - block.timestamp;
-            debt -= (((unvested * remaining) / period) * rate) / 1e18;
-        }
-        // TODO rework debt decrease math here for precision
-
-        // update user position
-        if (shares < s) {
-            pos.shares = s - shares;
-            if (shares < pos.vested) {
-                pos.vested -= shares;
-            } else {
+        // unstake debt shares
+        uint256 burned = (shares * rate) / 1e18;
+        {
+            uint256 vested = pos.vested; // burn vested shares first
+            if (vested > burned) {
+                pos.vested = vested - burned;
+                burned = 0;
+            } else if (vested > 0) {
+                burned -= vested;
                 pos.vested = 0;
             }
-            pos.updated = uint128(updated + dt);
-            pos.earned = 0;
+        }
+        uint256 unvested;
+
+        // get all pending rewards
+        uint256 d = pos.debt;
+        uint256 end = pos.timestamp + period;
+        uint256 r = pos.earned;
+        uint256 e;
+        if (block.timestamp > end) {
+            e = d;
         } else {
-            delete positions[account];
+            uint256 last = pos.updated;
+            e = (d * (block.timestamp - last)) / (end - last);
+            // lost unvested reward shares
+            unvested = (burned * (end - block.timestamp)) / period;
+            if (d - e - unvested < 1e6) unvested = d - e; // dust
         }
 
+        // update user position
+        pos.debt = d - e - unvested;
+        // (pos.vested updated above)
+        pos.earned = 0;
+        if (pos.debt > 0 || pos.vested > 0) {
+            // update timestamp
+            pos.updated = uint128(
+                block.timestamp < end ? block.timestamp : end
+            );
+        } else {
+            // delete position
+            pos.updated = 0;
+            pos.timestamp = 0;
+        }
+
+        // reduce global debt
+        if (unvested > 0) debt -= unvested;
+
         // distribute rewards
+        r += e;
         if (r > 0) {
             _distribute(receiver, r);
         }
@@ -221,18 +243,24 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
     ) external override onlyOwner returns (uint256, uint256) {
         // get all pending rewards
         Position storage pos = positions[account];
-        uint256 updated = pos.updated;
+        uint256 d = pos.debt;
         uint256 end = pos.timestamp + period;
-        uint256 dt = (block.timestamp < end ? block.timestamp : end) - updated;
-        uint256 r = pos.earned +
-            ((((pos.shares - pos.vested) * dt) / period) * rate) /
-            1e18;
+        uint256 r = pos.earned;
+        uint256 e;
+        if (block.timestamp > end) {
+            e = d;
+        } else {
+            uint256 last = pos.updated;
+            e = (d * (block.timestamp - last)) / (end - last);
+        }
 
         // update user position
-        pos.updated = uint128(updated + dt);
+        pos.debt = d - e;
         pos.earned = 0;
+        pos.updated = uint128(block.timestamp < end ? block.timestamp : end);
 
         // distribute rewards
+        r += e;
         if (r > 0) {
             _distribute(receiver, r);
         }
