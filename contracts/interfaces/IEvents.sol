@@ -69,4 +69,5 @@ interface IEvents {
     event GysrSpent(address indexed user, uint256 amount);
     event GysrVested(address indexed user, uint256 amount);
     event GysrWithdrawn(uint256 amount);
+    event Fee(address indexed receiver, address indexed token, uint256 amount);
 }

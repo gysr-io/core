@@ -28,9 +28,6 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
     using GysrUtils for uint256;
     using TokenUtils for IERC20;
 
-    // constants
-    uint256 public constant FULL_VESTING = 1e18;
-
     // single stake by user
     struct Stake {
         uint256 shares;
@@ -45,6 +42,9 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
         uint256 accumulator; // accumulator for reward shares per staking share
         uint256 dust; // placeholder to track earnings to be put back into the pool
     }
+
+    // constant
+    uint256 public constant MAX_TOKENS = 128; // only for viewing balances
 
     // data
     mapping(bytes32 => Stake[]) public stakes;
@@ -106,8 +106,10 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
         override
         returns (uint256[] memory balances_)
     {
-        balances_ = new uint256[](_tokens.length);
-        for (uint256 i; i < _tokens.length; i++) {
+        uint256 len = _tokens.length;
+        if (len > MAX_TOKENS) len = MAX_TOKENS;
+        balances_ = new uint256[](len);
+        for (uint256 i; i < len; ++i) {
             balances_[i] = IERC20(_tokens[i]).getAmount(
                 totalShares(_tokens[i]),
                 lockedShares(_tokens[i])
@@ -448,7 +450,7 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
         require(count <= _tokens.length, "mrm22");
 
         // for each token
-        for (uint256 i; i < count; i++) {
+        for (uint256 i; i < count; ++i) {
             uint256 pos = 68 + 32 * i;
             address addr;
             assembly {

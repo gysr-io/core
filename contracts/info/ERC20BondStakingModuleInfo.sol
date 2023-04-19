@@ -10,6 +10,7 @@ pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import "../interfaces/IStakingModuleInfo.sol";
@@ -27,6 +28,7 @@ import "../ERC20BondStakingModule.sol";
 library ERC20BondStakingModuleInfo {
     using Strings for uint256;
     using Strings for address;
+    using Address for address;
 
     uint256 public constant MAX_BONDS = 128;
 
@@ -121,11 +123,13 @@ library ERC20BondStakingModuleInfo {
 
         // try to get reward data
         address reward;
-        try IRewardModule(IPool(m.owner()).rewardModule()).tokens() returns (
-            address[] memory r
-        ) {
-            if (r.length == 1) reward = r[0];
-        } catch {}
+        if (m.owner().isContract()) {
+            try
+                IRewardModule(IPool(m.owner()).rewardModule()).tokens()
+            returns (address[] memory r) {
+                if (r.length == 1) reward = r[0];
+            } catch {}
+        }
 
         // svg
         bytes memory svg = abi.encodePacked(
@@ -233,7 +237,8 @@ library ERC20BondStakingModuleInfo {
             uint256 mprincipal,
             ,
             uint256 mdebt,
-            uint256 mupdated
+            uint128 mstart,
+            uint128 mupdated
         ) = m.markets(token);
         require(mcapacity > 0, "bsmi2");
 
@@ -246,7 +251,7 @@ library ERC20BondStakingModuleInfo {
         // get staking shares at current rate
         principal = (mprincipal > 0)
             ? (mprincipal * amount) / total
-            : amount * m.INITIAL_SHARES_PER_TOKEN();
+            : amount * 1e6;
 
         // estimate debt decay
         uint256 elapsed = block.timestamp - mupdated;
@@ -259,8 +264,8 @@ library ERC20BondStakingModuleInfo {
 
         // debt pricing
         uint256 debt = (principal * 1e18) / (mprice + (mcoeff * mdebt) / 1e18);
-        require(debt <= mmax, "bsm6");
-        require(debt <= mcapacity, "bsm7");
+        require(debt <= mmax, "bsmi3");
+        require(debt <= mcapacity, "bsmi4");
 
         return debt;
     }

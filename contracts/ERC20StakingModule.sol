@@ -29,9 +29,6 @@ contract ERC20StakingModule is IStakingModule, OwnerController {
     // events
     event Approval(address indexed user, address indexed operator, bool value);
 
-    // constant
-    uint256 public constant INITIAL_SHARES_PER_TOKEN = 1e6;
-
     // members
     IERC20 private immutable _token;
     address private immutable _factory;
@@ -190,9 +187,6 @@ contract ERC20StakingModule is IStakingModule, OwnerController {
      * @param user address of interest
      */
     function _balance(address user) private view returns (uint256) {
-        if (totalShares == 0) {
-            return 0;
-        }
         return _token.getAmount(totalShares, shares[user]);
     }
 

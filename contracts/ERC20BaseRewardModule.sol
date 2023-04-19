@@ -10,6 +10,7 @@ pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/IRewardModule.sol";
 import "./OwnerController.sol";
@@ -21,7 +22,11 @@ import "./TokenUtils.sol";
  * @notice this abstract class implements common ERC20 funding and unlocking
  * logic, which is inherited by other reward modules.
  */
-abstract contract ERC20BaseRewardModule is IRewardModule, OwnerController {
+abstract contract ERC20BaseRewardModule is
+    IRewardModule,
+    ReentrancyGuard,
+    OwnerController
+{
     using SafeERC20 for IERC20;
     using TokenUtils for IERC20;
 
@@ -98,7 +103,17 @@ abstract contract ERC20BaseRewardModule is IRewardModule, OwnerController {
         uint256 idx
     ) public view returns (uint256) {
         Funding storage funding = _fundings[token][idx];
+        return _unlockable(funding);
+    }
 
+    /**
+     * @notice internal method to compute number of unlockable shares for a specific funding schedule
+     * @param funding the funding schedule struct of interest
+     * @return the number of unlockable shares
+     */
+    function _unlockable(
+        Funding storage funding
+    ) private view returns (uint256) {
         // funding schedule is in future
         if (block.timestamp < funding.start) {
             return 0;
@@ -133,7 +148,7 @@ abstract contract ERC20BaseRewardModule is IRewardModule, OwnerController {
         uint256 start,
         address feeReceiver,
         uint256 feeRate
-    ) internal {
+    ) internal nonReentrant {
         requireController();
         // validate
         require(token != address(0));
@@ -176,12 +191,11 @@ abstract contract ERC20BaseRewardModule is IRewardModule, OwnerController {
         // check for stale funding schedules to expire
         uint256 removed = 0;
         uint256 originalSize = _fundings[token].length;
-        for (uint256 i = 0; i < originalSize; i++) {
-            Funding storage funding = _fundings[token][i - removed];
+        for (uint256 i; i < originalSize; ) {
             uint256 idx = i - removed;
-
+            Funding storage funding = _fundings[token][idx];
             if (
-                unlockable(token, idx) == 0 &&
+                _unlockable(funding) == 0 &&
                 block.timestamp >= funding.start + funding.duration
             ) {
                 emit RewardsExpired(
@@ -199,6 +213,9 @@ abstract contract ERC20BaseRewardModule is IRewardModule, OwnerController {
                 _fundings[token].pop();
                 removed++;
             }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -209,13 +226,17 @@ abstract contract ERC20BaseRewardModule is IRewardModule, OwnerController {
      */
     function _unlockTokens(address token) internal returns (uint256 shares) {
         // get unlockable shares for each funding schedule
-        for (uint256 i = 0; i < _fundings[token].length; i++) {
-            uint256 s = unlockable(token, i);
+        uint256 len = _fundings[token].length;
+        for (uint256 i; i < len; ) {
             Funding storage funding = _fundings[token][i];
+            uint256 s = _unlockable(funding);
             if (s > 0) {
                 funding.locked -= s;
                 funding.updated = uint64(block.timestamp);
                 shares += s;
+            }
+            unchecked {
+                ++i;
             }
         }
 

@@ -10,7 +10,7 @@
     "!contracts/test"
   ],
   "dependencies": {
-    "@openzeppelin/contracts": "^4.7.3"
+    "@openzeppelin/contracts": "^4.8.3"
   },
   "devDependencies": {
     "@anders-t/ethers-ledger": "^1.0.4",
@@ -33,7 +33,7 @@
     "mocha": "^8.1.1",
     "prettier": "^2.7.1",
     "prettier-plugin-solidity": "^1.1.2",
-    "solidity-coverage": "^0.7.21"
+    "solidity-coverage": "^0.8.2"
   },
   "scripts": {
     "test": "hardhat compile && hardhat test",

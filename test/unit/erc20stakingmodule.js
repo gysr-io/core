@@ -289,6 +289,63 @@ describe('ERC20StakingModule', function () {
 
       });
 
+
+      describe('when shares per token falls below floor', function () {
+
+        beforeEach('alice and bob stake', async function () {
+          this.res0 = await this.module.stake(alice, new BN(1), [], { from: owner });
+          await this.token.transfer(this.module.address, tokens(100), { from: org }); // 1e6 shares / 100e18 tokens
+          this.res1 = await this.module.stake(bob, tokens(123), [], { from: owner });
+        });
+
+        it('should update total staking balance to include all deposited tokens', async function () {
+          expect((await this.module.totals())[0]).to.be.bignumber.equal(tokens(223).add(new BN(1)));
+        });
+
+        it('should limit expanded staking balance of earlier user to min shares per token', async function () {
+          expect((await this.module.balances(alice))[0]).to.be.bignumber.equal(new BN(1000)); // 1e6 shares / 1e3
+        });
+
+        it('should update staking balance for later users on stake', async function () {
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(tokens(123));
+        });
+
+        it('should not expand staking balances on additional interest', async function () {
+          await this.token.transfer(this.module.address, tokens(100), { from: org }); // expand more
+          expect((await this.module.balances(alice))[0]).to.be.bignumber.equal(new BN(1000)); // 1e6 shares / 1e3
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(tokens(123));
+        });
+
+        it('should update the staking shares for earlier user at 1e6', async function () {
+          expect(await this.module.shares(alice)).to.be.bignumber.equal(toFixedPointBigNumber(1, 10, 6));
+        });
+
+        it('should update the staking shares for later user at 1e3 floor', async function () {
+          expect(await this.module.shares(bob)).to.be.bignumber.equal(shares(.123)); // 123e18 * 1e3
+        });
+
+        it('should combine to increase the total staking shares', async function () {
+          expect(await this.module.totalShares()).to.be.bignumber.equal(shares(.123).add(toFixedPointBigNumber(1, 10, 6)));
+        });
+
+        it('should emit first Staked event at 1e6 share rate', async function () {
+          expectEvent(
+            this.res0,
+            'Staked',
+            { user: alice, token: this.token.address, amount: new BN(1), shares: new BN(1000000) }
+          );
+        });
+
+        it('should emit second Staked event at floor 1e3 share rate', async function () {
+          expectEvent(
+            this.res1,
+            'Staked',
+            { user: bob, token: this.token.address, amount: tokens(123), shares: shares(0.123) }
+          );
+        });
+
+      });
+
     });
 
 
@@ -468,6 +525,51 @@ describe('ERC20StakingModule', function () {
             { account: bytes32(alice), user: router, token: this.token.address, amount: tokens(75), shares: shares(75) }
           );
         });
+
+      });
+
+      describe('when shares per token falls below floor and user unstakes', function () {
+
+        beforeEach(async function () {
+          // existing 300e24 shares and 300e18 tokens
+          // add 1000000e18 tokens (1e24)
+          await this.token.transfer(this.module.address, tokens(1000000), { from: org });
+
+          // unstake all
+          this.res = await this.module.unstake(alice, tokens(100 * 1e3), [], { from: owner });
+        });
+
+        it('should reduce total staking balance', async function () {
+          expect((await this.module.totals())[0]).to.be.bignumber.equal(tokens(300 + 1000000 - 100e3));
+        });
+
+        it('should clear user staking balance', async function () {
+          expect((await this.module.balances(alice))[0]).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should expand remaining user staking balance to min shares per token', async function () {
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(tokens(200 * 1e3)); // 1e6 shares / 1e3
+        });
+
+        it('should clear staking shares for user', async function () {
+          expect(await this.module.shares(alice)).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should not affect the staking shares for other user', async function () {
+          expect(await this.module.shares(bob)).to.be.bignumber.equal(shares(200));
+        });
+
+        it('should reduce the total staking shares', async function () {
+          expect(await this.module.totalShares()).to.be.bignumber.equal(shares(200));
+        });
+
+        it('should emit Unstaked event with same shares and inflated amount', async function () {
+          expectEvent(
+            this.res,
+            'Unstaked',
+            { user: alice, token: this.token.address, amount: tokens(100e3), shares: shares(100) }
+          );
+        })
 
       });
     });

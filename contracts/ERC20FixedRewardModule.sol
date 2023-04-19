@@ -10,6 +10,7 @@ pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/IRewardModule.sol";
 import "./interfaces/IConfiguration.sol";
@@ -25,7 +26,11 @@ import "./TokenUtils.sol";
  * will be earned over a specified time period. This can be used to create
  * incentive mechanisms such as bond sales, fixed duration payroll, and more.
  */
-contract ERC20FixedRewardModule is IRewardModule, OwnerController {
+contract ERC20FixedRewardModule is
+    IRewardModule,
+    ReentrancyGuard,
+    OwnerController
+{
     using SafeERC20 for IERC20;
     using TokenUtils for IERC20;
 
@@ -102,9 +107,7 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
     {
         balances_ = new uint256[](1);
         if (rewards > 0) {
-            balances_[0] =
-                (_token.balanceOf(address(this)) * (rewards - debt)) /
-                rewards;
+            balances_[0] = _token.getAmount(rewards, rewards - debt);
         }
     }
 
@@ -140,21 +143,11 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
         uint256 d = pos.debt;
         if (d > 0) {
             uint256 end = pos.timestamp + period;
-            if (block.timestamp > end) {
-                pos.earned += d;
-                pos.vested += (d * period) / (end - pos.updated);
-                d = 0;
-            } else {
-                uint256 last = pos.updated;
-                uint256 e = (d * (block.timestamp - last)) / (end - last);
-                pos.earned += e;
-                pos.vested +=
-                    (d * (block.timestamp - pos.timestamp)) /
-                    (end - last);
-                d -= e;
-            }
+            require(block.timestamp > end, "xrm4"); // current stake must be fully vested
+            pos.earned += d;
+            pos.vested += (d * period) / (end - pos.updated);
         }
-        pos.debt = d + reward;
+        pos.debt = reward;
         pos.timestamp = uint128(block.timestamp);
         pos.updated = uint128(block.timestamp);
 
@@ -201,7 +194,7 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
             e = (d * (block.timestamp - last)) / (end - last);
             // lost unvested reward shares
             unvested = (burned * (end - block.timestamp)) / period;
-            if (d - e - unvested < 1e6) unvested = d - e; // dust
+            if (d - e - unvested < 1e3) unvested = d - e; // dust
         }
 
         // update user position
@@ -249,15 +242,17 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
         uint256 e;
         if (block.timestamp > end) {
             e = d;
+            pos.updated = uint128(end);
         } else {
             uint256 last = pos.updated;
             e = (d * (block.timestamp - last)) / (end - last);
+            pos.updated = uint128(block.timestamp);
         }
 
         // update user position
         pos.debt = d - e;
         pos.earned = 0;
-        pos.updated = uint128(block.timestamp < end ? block.timestamp : end);
+        // (pos.updated set above)
 
         // distribute rewards
         r += e;
@@ -285,8 +280,8 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
      * @dev this is a public method callable by any account or contract
      * @param amount number of reward tokens to deposit
      */
-    function fund(uint256 amount) external {
-        require(amount > 0, "xrm4");
+    function fund(uint256 amount) external nonReentrant {
+        require(amount > 0, "xrm5");
 
         // get fees
         (address receiver, uint256 feeRate) = _config.getAddressUint96(
@@ -314,10 +309,10 @@ contract ERC20FixedRewardModule is IRewardModule, OwnerController {
         requireController();
 
         // validate excess budget
-        require(amount > 0, "xrm5");
-        require(amount <= _token.balanceOf(address(this)), "xrm6");
+        require(amount > 0, "xrm6");
+        require(amount <= _token.balanceOf(address(this)), "xrm7");
         uint256 shares = _token.getShares(rewards, amount);
-        require(shares <= rewards - debt, "xrm7");
+        require(shares <= rewards - debt, "xrm8");
 
         // withdraw
         rewards -= shares;

@@ -31,21 +31,21 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
 
     // events
     event MarketOpened(
-        address token,
+        address indexed token,
         uint256 price,
         uint256 coeff,
         uint256 max,
         uint256 capacity
     );
-    event MarketClosed(address token);
+    event MarketClosed(address indexed token);
     event MarketAdjusted(
-        address token,
+        address indexed token,
         uint256 price,
         uint256 coeff,
         uint256 max,
         uint256 capacity
     );
-    event MarketBalanceWithdrawn(address token, uint256 amount);
+    event MarketBalanceWithdrawn(address indexed token, uint256 amount);
 
     // bond market
     struct Market {
@@ -56,7 +56,8 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         uint256 principal;
         uint256 vested;
         uint256 debt;
-        uint256 updated;
+        uint128 start; // start of current vesting/decay period
+        uint128 updated; // last incremental update to vesting/decay
     }
 
     // bond position
@@ -75,9 +76,8 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
     }
 
     // constant
-    uint256 public constant INITIAL_SHARES_PER_TOKEN = 10 ** 6;
     uint256 public constant MAX_MARKETS = 16;
-    uint256 public constant MAX_BONDS = 128;
+    uint256 public constant MAX_BONDS = 128; // only for viewing balances
     uint256 public constant MIN_PERIOD = 3600;
 
     // members: config
@@ -146,7 +146,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         if (!burndown) return balances_;
         uint256 count = balanceOf(user);
         if (count > MAX_BONDS) count = MAX_BONDS;
-        for (uint256 i = 0; i < count; i++) {
+        for (uint256 i; i < count; ++i) {
             Bond storage b = bonds[ownerBonds[user][i]];
             uint256 dt = block.timestamp - b.timestamp;
             if (dt > period) {
@@ -175,8 +175,8 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         returns (uint256[] memory totals_)
     {
         totals_ = new uint256[](_markets.length);
-        for (uint256 i; i < _markets.length; i++) {
-            totals_[0] = IERC20(_markets[i]).balanceOf(address(this));
+        for (uint256 i; i < _markets.length; ++i) {
+            totals_[i] = IERC20(_markets[i]).balanceOf(address(this));
         }
     }
 
@@ -246,6 +246,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         if (!burndown) {
             m.vested += minted;
         }
+        m.start = uint128(block.timestamp);
 
         // mint position
         _safeMint(sender, id);
@@ -272,7 +273,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         assembly {
             id := calldataload(132)
         }
-        require(ownerOf(id) == sender, "bsm9");
+        require(_ownerOf(id) == sender, "bsm9");
 
         // default unstake with no principal returned
         Bond storage b = bonds[id];
@@ -330,7 +331,9 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         if (shares > 0) {
             // note: unwinding debt here does introduce a price drop and frontrunning opportunity,
             // but it also prevents manipulation of debt via repeated staking and unstaking
-            markets[token].debt -= (debt * (period - elapsed)) / period;
+            uint256 udebt = (debt * (period - elapsed)) / period;
+            markets[token].debt -= udebt;
+            markets[token].capacity += udebt;
             markets[token].principal -= shares;
             IERC20(token).safeTransfer(sender, amount);
         }
@@ -354,7 +357,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         assembly {
             id := calldataload(132)
         }
-        require(ownerOf(id) == sender, "bsm16");
+        require(_ownerOf(id) == sender, "bsm16");
 
         Bond storage b = bonds[id];
         address token = b.market;
@@ -382,7 +385,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         assembly {
             id := calldataload(100)
         }
-        require(ownerOf(id) == sender, "bsm18");
+        require(_ownerOf(id) == sender, "bsm18");
 
         // update
         _update(bonds[id].market);
@@ -427,7 +430,8 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
             principal: 0,
             vested: 0,
             debt: 0,
-            updated: block.timestamp
+            start: uint128(block.timestamp),
+            updated: uint128(block.timestamp)
         });
         _markets.push(token);
         _marketIndex[token] = _markets.length - 1;
@@ -519,8 +523,9 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
     function tokenURI(
         uint256 tokenId
     ) public view override returns (string memory) {
+        _requireMinted(tokenId);
         address metadata = _config.getAddress(
-            keccak256("gysr.core.module.bond.metadata.v3")
+            keccak256("gysr.core.bond.metadata")
         );
         return IMetadata(metadata).metadata(address(this), tokenId, "");
     }
@@ -546,17 +551,24 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
     function _update(address token) private {
         Market storage m = markets[token];
 
-        uint256 elapsed = block.timestamp - m.updated;
-        if (elapsed < period) {
+        uint256 updated = m.updated;
+        uint256 elapsed = block.timestamp - updated;
+        uint256 end = m.start + period;
+        if (block.timestamp < end) {
+            uint256 remaining = end - updated;
+
             // vest principal
             if (burndown) {
                 uint256 vested = m.vested;
-                m.vested = vested + ((m.principal - vested) * elapsed) / period; // approximation, exact value upper bound
+                m.vested =
+                    vested +
+                    ((m.principal - vested) * elapsed) /
+                    remaining; // approximation, exact value upper bound
             }
 
             // decay debt
             uint256 debt = m.debt;
-            m.debt = debt - (debt * elapsed) / period; // approximation, exact value lower bound
+            m.debt = debt - (debt * elapsed) / remaining; // approximation, exact value lower bound
         } else {
             // vest principal
             if (burndown) m.vested = m.principal;
@@ -593,13 +605,14 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
             }
         }
 
-        m.updated = block.timestamp;
+        m.updated = uint128(block.timestamp);
     }
 
     function _beforeTokenTransfer(
         address from,
         address to,
-        uint256 tokenId
+        uint256 tokenId,
+        uint256
     ) internal override {
         if (from != address(0)) _remove(from, tokenId);
         if (to != address(0)) _append(to, tokenId);

@@ -110,7 +110,7 @@ describe('Aquarium integration', function () {
         const data = web3.eth.abi.encodeParameters(['uint256'], [3]);
         await expectRevert(
           this.pool.stake(1, data, [], { from: alice }),
-          'ERC721: caller is not token owner nor approved'
+          'ERC721: caller is not token owner or approved'
         );
       });
     });

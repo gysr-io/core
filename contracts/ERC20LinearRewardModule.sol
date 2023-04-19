@@ -10,6 +10,7 @@ pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/IRewardModule.sol";
 import "./interfaces/IConfiguration.sol";
@@ -26,7 +27,11 @@ import "./TokenUtils.sol";
  * incentive mechanisms such as streaming payroll, equity vesting, fixed rate
  * yield farms, and more.
  */
-contract ERC20LinearRewardModule is IRewardModule, OwnerController {
+contract ERC20LinearRewardModule is
+    IRewardModule,
+    ReentrancyGuard,
+    OwnerController
+{
     using SafeERC20 for IERC20;
     using TokenUtils for IERC20;
 
@@ -106,9 +111,10 @@ contract ERC20LinearRewardModule is IRewardModule, OwnerController {
     {
         balances_ = new uint256[](1);
         if (rewardShares > 0) {
-            balances_[0] =
-                (_token.balanceOf(address(this)) * (rewardShares - earned)) /
-                rewardShares;
+            balances_[0] = _token.getAmount(
+                rewardShares,
+                rewardShares - earned
+            );
         }
     }
 
@@ -243,7 +249,7 @@ contract ERC20LinearRewardModule is IRewardModule, OwnerController {
      * @dev this is a public method callable by any account or contract
      * @param amount number of reward tokens to deposit
      */
-    function fund(uint256 amount) external {
+    function fund(uint256 amount) external nonReentrant {
         require(amount > 0, "lrm4");
         _update();
 

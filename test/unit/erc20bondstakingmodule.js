@@ -23,11 +23,14 @@ const TestToken = artifacts.require('TestToken');
 const TestElasticToken = artifacts.require('TestElasticToken')
 const TestFeeToken = artifacts.require('TestFeeToken');
 const TestIndivisibleToken = artifacts.require('TestIndivisibleToken');
+const ERC20BondStakingModuleInfo = artifacts.require('ERC20BondStakingModuleInfo');
 
 
 // tolerance
 const TOKEN_DELTA = toFixedPointBigNumber(0.001, 10, DECIMALS);
+const TOKEN_DELTA_BIG = toFixedPointBigNumber(0.01, 10, DECIMALS);
 const SHARE_DELTA = toFixedPointBigNumber(0.001 * (10 ** 6), 10, DECIMALS);
+const SHARE_DELTA_BIG = toFixedPointBigNumber(0.01 * (10 ** 6), 10, DECIMALS);
 const DEBT_DELTA = toFixedPointBigNumber(0.001 * (10 ** 6), 10, DECIMALS);
 
 
@@ -459,6 +462,10 @@ describe('ERC20BondStakingModule', function () {
         expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.equal(this.t1);
       });
 
+      it('should update bond market vesting start timestamp', async function () {
+        expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
+      });
+
       it('should increment nonce', async function () {
         expect(await this.module.nonce()).to.be.bignumber.equal(new BN(3));
       });
@@ -479,6 +486,10 @@ describe('ERC20BondStakingModule', function () {
         expect(e.args.shares).to.be.bignumber.closeTo(shares(80), DEBT_DELTA);
       });
 
+      it('should not emit Fee events', async function () {
+        expect(this.res0.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
+        expect(this.res1.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
+      });
     });
 
 
@@ -565,6 +576,10 @@ describe('ERC20BondStakingModule', function () {
         expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.equal(this.t1);
       });
 
+      it('should update bond market vesting start timestamp', async function () {
+        expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
+      });
+
       it('should increment nonce', async function () {
         expect(await this.module.nonce()).to.be.bignumber.equal(new BN(3));
       });
@@ -640,7 +655,7 @@ describe('ERC20BondStakingModule', function () {
         expect(await this.token.balanceOf(this.module.address)).to.be.bignumber.equal(tokens(99));
       });
 
-      it('should increase module token balance by fee amount', async function () {
+      it('should increase treasury token balance by fee amount', async function () {
         expect(await this.token.balanceOf(treasury)).to.be.bignumber.equal(tokens(1));
       });
 
@@ -652,9 +667,178 @@ describe('ERC20BondStakingModule', function () {
         );
       });
 
+      it('should emit Fee event', async function () {
+        expectEvent(this.res0, 'Fee', { receiver: treasury, token: this.token.address, amount: tokens(1.0) });
+      });
+
     });
 
-    // TODO multiple markets
+
+    describe('when one user purchases bonds across multiple markets', function () {
+
+      beforeEach(async function () {
+        this.token1 = await TestToken.new({ from: org });
+
+        // open another bond market
+        await this.module.open(
+          this.token1.address,
+          e18(4000),
+          e18(1500).div(toFixedPointBigNumber(2000, 10, 6)), // (4000 - 1500) / 2000e6
+          shares(100),
+          shares(3000),
+          { from: owner }
+        );
+        // acquire bond tokens and approve spending
+        await this.token1.transfer(alice, tokens(1000000), { from: org });
+        await this.token1.approve(this.module.address, tokens(100000000), { from: alice });
+
+        // configure fee
+        await this.config.setAddressUint96(
+          web3.utils.soliditySha3('gysr.core.bond.stake.fee'),
+          treasury,
+          e18(0.01),
+          { from: org }
+        );
+
+        // purchase bonds
+        const data0 = web3.eth.abi.encodeParameter('address', this.token.address);
+        this.res0 = await this.module.stake(alice, tokens(100), data0, { from: owner });
+        this.t0 = (await this.module.markets(this.token.address)).updated;
+
+        const data1 = web3.eth.abi.encodeParameter('address', this.token1.address);
+        this.res1 = await this.module.stake(alice, tokens(120000), data1, { from: owner });
+        this.t1 = (await this.module.markets(this.token1.address)).updated;
+      });
+
+      it('should decrease user token balance of first token', async function () {
+        expect(await this.token.balanceOf(alice)).to.be.bignumber.equal(tokens(900));
+      });
+
+      it('should decrease user token balance of first token', async function () {
+        expect(await this.token1.balanceOf(alice)).to.be.bignumber.equal(tokens(880000));
+      });
+
+      it('should update total staking balances', async function () {
+        const totals = await this.module.totals()
+        expect(totals[0]).to.be.bignumber.equal(tokens(99));
+        expect(totals[1]).to.be.bignumber.equal(tokens(118800));
+      });
+
+      it('should increase user staking balances', async function () {
+        const balances = await this.module.balances(alice);
+        expect(balances[0]).to.be.bignumber.closeTo(tokens(99), tokens(2 * 99).div(days(30)));
+        expect(balances[1]).to.be.bignumber.closeTo(tokens(118800), tokens(2 * 118800).div(days(30)));
+      });
+
+      it('should create the first bond position in first market', async function () {
+        const b = await this.module.bonds(new BN(1));
+        expect(b.market).to.equal(this.token.address);
+        expect(b.principal).to.be.bignumber.equal(shares(99));
+        expect(b.debt).to.be.bignumber.equal(shares(79.2));
+        expect(b.timestamp).to.be.bignumber.equal(this.t0);
+      });
+
+      it('should create the second bond position in second market', async function () {
+        const b = await this.module.bonds(new BN(2));
+        expect(b.market).to.equal(this.token1.address);
+        expect(b.principal).to.be.bignumber.equal(shares(118800));
+        expect(b.debt).to.be.bignumber.equal(shares(29.7));
+        expect(b.timestamp).to.be.bignumber.equal(this.t1);
+      });
+
+      it('should set bond owners', async function () {
+        expect(await this.module.ownerOf(1)).to.be.equal(alice);
+        expect(await this.module.ownerOf(2)).to.be.equal(alice);
+      });
+
+      it('should set owner bond mappings', async function () {
+        expect(await this.module.ownerBonds(alice, 0)).to.be.bignumber.equal(new BN(1));
+        expect(await this.module.ownerBonds(alice, 1)).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should set bond index mappings', async function () {
+        expect(await this.module.bondIndex(1)).to.be.bignumber.equal(new BN(0));
+        expect(await this.module.bondIndex(2)).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should increase bond count for user', async function () {
+        expect(await this.module.balanceOf(alice)).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should increase first bond market debt', async function () {
+        expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(79.2), DEBT_DELTA);
+      });
+
+      it('should increase second bond market debt', async function () {
+        expect((await this.module.markets(this.token1.address)).debt).to.be.bignumber.closeTo(shares(29.7), DEBT_DELTA);
+      });
+
+      it('should decrease first bond market capacity', async function () {
+        expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(920.8), DEBT_DELTA);
+      });
+
+      it('should decrease second bond market capacity', async function () {
+        expect((await this.module.markets(this.token1.address)).capacity).to.be.bignumber.closeTo(shares(2970.3), DEBT_DELTA);
+      });
+
+      it('should increase first bond market token shares', async function () {
+        expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.equal(shares(99));
+      });
+
+      it('should increase second bond market token shares', async function () {
+        expect((await this.module.markets(this.token1.address)).principal).to.be.bignumber.equal(shares(118800));
+      });
+
+      it('should update first bond market timestamps only on first stake', async function () {
+        expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.equal(this.t0);
+        expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t0);
+      });
+
+      it('should update second bond market timestamps on second stake', async function () {
+        expect((await this.module.markets(this.token1.address)).updated).to.be.bignumber.equal(this.t1);
+        expect((await this.module.markets(this.token1.address)).start).to.be.bignumber.equal(this.t1);
+      });
+
+      it('should increment nonce', async function () {
+        expect(await this.module.nonce()).to.be.bignumber.equal(new BN(3));
+      });
+
+      it('should increase module token balances by stake amount minus fee', async function () {
+        expect(await this.token.balanceOf(this.module.address)).to.be.bignumber.equal(tokens(99));
+        expect(await this.token1.balanceOf(this.module.address)).to.be.bignumber.equal(tokens(118800));
+      });
+
+      it('should increase treasury token balances by fee amount', async function () {
+        expect(await this.token.balanceOf(treasury)).to.be.bignumber.equal(tokens(1));
+        expect(await this.token1.balanceOf(treasury)).to.be.bignumber.equal(tokens(1200));
+      });
+
+      it('should emit first Staked event for first token market', async function () {
+        expectEvent(
+          this.res0,
+          'Staked',
+          { user: alice, token: this.token.address, amount: tokens(100), shares: shares(79.2) }
+        );
+      });
+
+      it('should emit second Staked event for second token market', async function () {
+        expectEvent(
+          this.res1,
+          'Staked',
+          { user: alice, token: this.token1.address, amount: tokens(120000), shares: shares(29.7) }
+        );
+      });
+
+      it('should emit Fee event for first token market', async function () {
+        expectEvent(this.res0, 'Fee', { receiver: treasury, token: this.token.address, amount: tokens(1.0) });
+      });
+
+      it('should emit Fee event for second token market', async function () {
+        expectEvent(this.res1, 'Fee', { receiver: treasury, token: this.token1.address, amount: tokens(1200) });
+      });
+
+    });
+
   });
 
 
@@ -763,6 +947,14 @@ describe('ERC20BondStakingModule', function () {
           expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(45), SHARE_DELTA);
         });
 
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(14)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.closeTo(this.t0.add(days(7)), new BN(1));
+        });
+
       });
 
       describe('when more than a full vesting period has elapsed', function () {
@@ -791,6 +983,14 @@ describe('ERC20BondStakingModule', function () {
 
         it('should fully decay debt', async function () {
           expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(30)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.closeTo(this.t0.add(days(7)), new BN(1));
         });
 
       });
@@ -889,6 +1089,14 @@ describe('ERC20BondStakingModule', function () {
           expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(45), DEBT_DELTA);
         });
 
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(14)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.closeTo(this.t0.add(days(7)), new BN(1));
+        });
+
       });
 
       describe('when more than a full vesting period has elapsed', function () {
@@ -917,6 +1125,14 @@ describe('ERC20BondStakingModule', function () {
 
         it('should fully decay debt', async function () {
           expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(30)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.closeTo(this.t0.add(days(7)), new BN(1));
         });
 
       });
@@ -1057,6 +1273,14 @@ describe('ERC20BondStakingModule', function () {
           expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.equal(shares(456));
         });
 
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(5)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
+        });
+
         it('should emit Unstaked event', async function () {
           expectEvent(
             this.res,
@@ -1161,7 +1385,7 @@ describe('ERC20BondStakingModule', function () {
         await this.token.approve(this.module.address, tokens(100000), { from: alice });
         await this.token.approve(this.module.address, tokens(100000), { from: bob });
 
-        // purchase bonds one week apart
+        // purchase bonds two days apart
         const data = web3.eth.abi.encodeParameter('address', this.token.address);
         await this.module.stake(alice, tokens(300), data, { from: owner }); // +100e6 debt
         this.t0 = (await this.module.markets(this.token.address)).updated;
@@ -1227,12 +1451,20 @@ describe('ERC20BondStakingModule', function () {
           expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(178.8), SHARE_DELTA);
         });
 
-        it('should not affect total bond market capacity', async function () {
-          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850), DEBT_DELTA);
+        it('should increase total bond market capacity', async function () {
+          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850 + 50), DEBT_DELTA);
         });
 
         it('should decrease total bond market token shares', async function () {
           expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.closeTo(shares(306), SHARE_DELTA);
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(5)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
         });
 
         it('should emit Unstaked event', async function () {
@@ -1301,12 +1533,20 @@ describe('ERC20BondStakingModule', function () {
           expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(178.8), SHARE_DELTA);
         });
 
-        it('should not affect total bond market capacity', async function () {
-          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850), DEBT_DELTA);
+        it('should increase total bond market capacity', async function () {
+          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850 + 25), DEBT_DELTA);
         });
 
         it('should decrease total bond market token shares', async function () {
           expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.equal(shares(381));
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(5)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
         });
 
         it('should emit Unstaked event', async function () {
@@ -1373,21 +1613,29 @@ describe('ERC20BondStakingModule', function () {
         });
 
         it('should decay bond market debt and remove unvested unstaked debt', async function () {
-          // 100 - 0.2 * 100 + 50 - 0.3 * (80 + 50) - 0.5 * 50 - 0.2 * 66 - 0.3 * 50
-          expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(37.8), DEBT_DELTA);
+          // 100 - 0.2 * 100 + 50 - 0.3 * (80 + 50) - 0.5 * 50 - (2 / 7) * 66 - 0.3 * 50
+          expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(32.142857), DEBT_DELTA);
         });
 
         it('should increase vested spent tokens', async function () {
-          // 0.2 * 300 + 0.3 * (240 + 156) + 0.2 * (456 - 75 - 178.8)
-          expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(219.24), SHARE_DELTA);
+          // 0.2 * 300 + 0.3 * (240 + 156) + (2 / 7) * (456 - 75 - 178.8)
+          expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(236.5714), SHARE_DELTA);
         });
 
-        it('should not affect total bond market capacity', async function () {
-          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850), DEBT_DELTA);
+        it('should increase total bond market capacity', async function () {
+          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850 + 25 + 15), DEBT_DELTA);
         });
 
         it('should decrease total bond market token shares', async function () {
           expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.closeTo(shares(381 - 45), SHARE_DELTA);
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(7)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
         });
 
         it('should emit Unstaked event', async function () {
@@ -1454,21 +1702,29 @@ describe('ERC20BondStakingModule', function () {
         });
 
         it('should decay bond market debt and remove unvested unstaked debt', async function () {
-          // 100 - 0.2 * 100 + 50 - 0.3 * (80 + 50) - 0.25 * 100 - 0.2 * 66 - 0.3 * 30
-          expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(43.8), DEBT_DELTA);
+          // 100 - 0.2 * 100 + 50 - 0.3 * (80 + 50) - 0.25 * 100 - (2 / 7) * 66 - 0.3 * 30
+          expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(38.142857), DEBT_DELTA);
         });
 
         it('should increase vested spent tokens', async function () {
-          // 0.2 * 300 + 0.3 * (240 + 156) + 0.2 * (456 - 75 - 178.8)
-          expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(219.24), SHARE_DELTA);
+          // 0.2 * 300 + 0.3 * (240 + 156) + (2 / 7) * (456 - 75 - 178.8)
+          expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(236.571428), SHARE_DELTA);
         });
 
-        it('should not affect total bond market capacity', async function () {
-          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850), DEBT_DELTA);
+        it('should increase total bond market capacity', async function () {
+          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850 + 25 + 9), DEBT_DELTA);
         });
 
         it('should decrease total bond market token shares', async function () {
           expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.closeTo(shares(381 - 27), SHARE_DELTA);
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(7)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
         });
 
         it('should emit Unstaked event', async function () {
@@ -1481,9 +1737,297 @@ describe('ERC20BondStakingModule', function () {
 
       });
 
-      // TODO multiple users
+    });
 
-      // TODO multiple markets
+    describe('when multiple complex token markets are open', function () {
+
+      beforeEach('setup', async function () {
+        // owner creates bond module
+        this.token = await TestToken.new({ from: org });
+        this.elastic = await TestElasticToken.new({ from: org });
+        this.module = await ERC20BondStakingModule.new(
+          days(10),
+          true,
+          this.config.address,
+          factory,
+          { from: owner }
+        );
+        // open bond markets
+        await this.module.open(
+          this.token.address,
+          e18(3.0),
+          e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+          shares(1000),
+          shares(10000),
+          { from: owner }
+        );
+        await this.module.open(
+          this.elastic.address,
+          e18(50.0),
+          e18(25).div(toFixedPointBigNumber(500, 10, 6)), // (75 - 50) / 500e6
+          shares(200),
+          shares(10000),
+          { from: owner }
+        );
+        // acquire bond tokens and approve spending
+        await this.token.transfer(alice, tokens(1000), { from: org });
+        await this.token.transfer(bob, tokens(1000), { from: org });
+        await this.token.approve(this.module.address, tokens(100000), { from: alice });
+        await this.token.approve(this.module.address, tokens(100000), { from: bob });
+        await this.elastic.transfer(alice, tokens(5000), { from: org });
+        await this.elastic.transfer(bob, tokens(5000), { from: org });
+        await this.elastic.approve(this.module.address, tokens(500000), { from: alice });
+        await this.elastic.approve(this.module.address, tokens(500000), { from: bob });
+
+        // purchase bonds in first market
+        const data = web3.eth.abi.encodeParameter('address', this.token.address);
+        await this.module.stake(alice, tokens(300), data, { from: owner }); // +100e6 debt
+        this.t0 = (await this.module.markets(this.token.address)).updated;
+        await setupTime(this.t0, days(2)); // decay -20e6 debt
+        await this.module.stake(bob, tokens(156), data, { from: owner }); // price now @ 3.12
+        this.t1 = (await this.module.markets(this.token.address)).updated;
+
+        // purchase bonds in first market
+        await setupTime(this.t0, days(5));
+        const data1 = web3.eth.abi.encodeParameter('address', this.elastic.address);
+        await this.module.stake(alice, tokens(2500), data1, { from: owner }); // +50e6 debt
+        this.t2 = (await this.module.markets(this.elastic.address)).updated;
+        await setupTime(this.t0, days(8)); // decay -15e6 debt
+        await this.module.stake(bob, tokens(1035), data1, { from: owner }); // price now @ 51.75
+        this.t3 = (await this.module.markets(this.elastic.address)).updated;
+      });
+
+      describe('when one user unstakes all shares on partially vested bond from first market', function () {
+
+        beforeEach(async function () {
+          // advance to 10 days
+          await setupTime(this.t0, days(10));
+
+          // unstake bond
+          const data = web3.eth.abi.encodeParameter('uint256', new BN(2));
+          this.res = await this.module.unstake(bob, new BN(0), data, { from: owner });
+        });
+
+        it('should have zero staking balance for user in first market', async function () {
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should not affect staking balance for user in second market', async function () {
+          expect((await this.module.balances(bob))[1]).to.be.bignumber.closeTo(tokens(1035 * 0.8), TOKEN_DELTA_BIG);
+        });
+
+        it('should reduce total staking balance for first market', async function () {
+          expect((await this.module.totals())[0]).to.be.bignumber.closeTo(tokens(456 - 0.2 * 156), TOKEN_DELTA);
+        });
+
+        it('should not affect total staking balance for second market', async function () {
+          expect((await this.module.totals())[1]).to.be.bignumber.equal(tokens(3535));
+        });
+
+        it('should increase user token balance by remaining principal', async function () {
+          expect(await this.token.balanceOf(bob)).to.be.bignumber.closeTo(tokens(844 + 0.2 * 156), TOKEN_DELTA);
+        });
+
+        it('should clear unstaked bond position', async function () {
+          const b = await this.module.bonds(new BN(2));
+          expect(b.market).to.equal(constants.ZERO_ADDRESS);
+          expect(b.principal).to.be.bignumber.equal(new BN(0));
+          expect(b.debt).to.be.bignumber.equal(new BN(0));
+          expect(b.timestamp).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should clear the bond owner', async function () {
+          await expectRevert(this.module.ownerOf(2), 'ERC721: invalid token ID');
+        });
+
+        it('should reindex the owner bond mapping', async function () {
+          expect(await this.module.ownerBonds(bob, 0)).to.be.bignumber.equal(new BN(4));
+          expect(await this.module.ownerBonds(bob, 1)).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should clear the bond index mapping', async function () {
+          expect(await this.module.bondIndex(2)).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should decrease bond count for user', async function () {
+          expect(await this.module.balanceOf(bob)).to.be.bignumber.equal(new BN(1));
+        });
+
+        it('should decay and decrease bond market debt', async function () {
+          // 100 - 0.2 * 100 + 50 - 0.8 * (80 + 50) - 0.2 * 50
+          expect((await this.module.markets(this.token.address)).debt).to.be.bignumber.closeTo(shares(16), DEBT_DELTA);
+        });
+
+        it('should increase vested spent tokens', async function () {
+          // 0.2 * 300 + 0.8 * (240 + 156)
+          expect((await this.module.markets(this.token.address)).vested).to.be.bignumber.closeTo(shares(376.8), SHARE_DELTA);
+        });
+
+        it('should increase total bond market capacity', async function () {
+          expect((await this.module.markets(this.token.address)).capacity).to.be.bignumber.closeTo(shares(9850 + 10), DEBT_DELTA);
+        });
+
+        it('should decrease total bond market token shares', async function () {
+          expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.closeTo(shares(456 - 0.2 * 156), SHARE_DELTA);
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(10)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
+        });
+
+        it('should not affect or update other bond market', async function () {
+          const m = await this.module.markets(this.elastic.address);
+          expect(m.start).to.be.bignumber.equal(this.t3);
+          expect(m.updated).to.be.bignumber.equal(this.t3);
+          expect(m.debt).to.be.bignumber.closeTo(shares(55), DEBT_DELTA);
+          expect(m.principal).to.be.bignumber.equal(shares(3535));
+          expect(m.vested).to.be.bignumber.closeTo(shares(750), SHARE_DELTA_BIG);
+        });
+
+        it('should emit Unstaked event', async function () {
+          const e = this.res.logs.filter(l => l.event === 'Unstaked')[0];
+          expect(e.args.user).eq(bob);
+          expect(e.args.token).eq(this.token.address);
+          expect(e.args.amount).to.be.bignumber.closeTo(tokens(0.2 * 156), TOKEN_DELTA);
+          expect(e.args.shares).to.be.bignumber.closeTo(shares(50), DEBT_DELTA);
+        });
+      });
+
+
+      describe('when multiple bonds are unstaked from elastic token market', function () {
+
+        beforeEach(async function () {
+          // advance to 10 days
+          await setupTime(this.t0, days(10));
+
+          // unstake bond
+          const data0 = web3.eth.abi.encodeParameter('uint256', new BN(3));
+          this.res0 = await this.module.unstake(alice, new BN(0), data0, { from: owner }); // 50% vested
+
+          // token supply expands
+          await this.elastic.setCoefficient(e18(1.05));
+
+          // unstake another bond
+          setupTime(this.t0, days(15));
+          const data1 = web3.eth.abi.encodeParameter('uint256', new BN(4));
+          this.res1 = await this.module.unstake(bob, new BN(0), data1, { from: owner }); // 70% vested
+        });
+
+        it('should have zero staking balance for users in elastic market', async function () {
+          expect((await this.module.balances(alice))[1]).to.be.bignumber.equal(new BN(0));
+          expect((await this.module.balances(bob))[1]).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should not affect staking balances for users in first market', async function () {
+          expect((await this.module.balances(alice))[0]).to.be.bignumber.equal(new BN(0)); // fully vested
+          expect((await this.module.balances(bob))[0]).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should reduce total staking balance for elastic market by unstakes but expand supply', async function () {
+          // 3535 - 0.5 * 2500 - 0.3 * 1035  = 1974.5 -> *1.05 = 2073.225
+          expect((await this.module.totals())[1]).to.be.bignumber.closeTo(tokens(2073.225), TOKEN_DELTA_BIG);
+        });
+
+        it('should not affect total staking balance for first market', async function () {
+          expect((await this.module.totals())[0]).to.be.bignumber.closeTo(tokens(456), TOKEN_DELTA);
+        });
+
+        it('should increase first user token balance by remaining principal after expansion', async function () {
+          expect(await this.elastic.balanceOf(alice)).to.be.bignumber.closeTo(tokens(1.05 * (2500 + 0.5 * 2500)), TOKEN_DELTA_BIG);
+        });
+
+        it('should increase second user token balance by remaining principal after expansion', async function () {
+          expect(await this.elastic.balanceOf(bob)).to.be.bignumber.closeTo(tokens(1.05 * (3965 + 0.3 * 1035)), TOKEN_DELTA_BIG);
+        });
+
+        it('should clear unstaked bond positions', async function () {
+          const b0 = await this.module.bonds(new BN(3));
+          expect(b0.market).to.equal(constants.ZERO_ADDRESS);
+          expect(b0.timestamp).to.be.bignumber.equal(new BN(0));
+          const b1 = await this.module.bonds(new BN(4));
+          expect(b1.market).to.equal(constants.ZERO_ADDRESS);
+          expect(b1.timestamp).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should clear the bond owners', async function () {
+          await expectRevert(this.module.ownerOf(3), 'ERC721: invalid token ID');
+          await expectRevert(this.module.ownerOf(4), 'ERC721: invalid token ID');
+        });
+
+        it('should update the owner bond mappings', async function () {
+          expect(await this.module.ownerBonds(alice, 0)).to.be.bignumber.equal(new BN(1));
+          expect(await this.module.ownerBonds(alice, 1)).to.be.bignumber.equal(new BN(0));
+          expect(await this.module.ownerBonds(bob, 0)).to.be.bignumber.equal(new BN(2));
+          expect(await this.module.ownerBonds(bob, 1)).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should clear the bond index mapping', async function () {
+          expect(await this.module.bondIndex(3)).to.be.bignumber.equal(new BN(0));
+          expect(await this.module.bondIndex(4)).to.be.bignumber.equal(new BN(0));
+        });
+
+        it('should decrease bond count for users', async function () {
+          expect(await this.module.balanceOf(alice)).to.be.bignumber.equal(new BN(1));
+          expect(await this.module.balanceOf(bob)).to.be.bignumber.equal(new BN(1));
+        });
+
+        it('should decay and decrease bond market debt', async function () {
+          // 50 - 0.3 * 50 + 20 - 0.2 * (35 + 20) - 0.5 * 50 = 19
+          // 19 - (5 / 8) * 19 - 0.3 * 20 = 1.125
+          expect((await this.module.markets(this.elastic.address)).debt).to.be.bignumber.closeTo(shares(1.125), DEBT_DELTA);
+        });
+
+        it('should increase vested spent tokens', async function () {
+          // 0.3 * 2500 + 0.2 * (1750 + 1035) = 1307
+          // 1307 + (5 / 8) * (2285 - 1307) = 1918.25
+          expect((await this.module.markets(this.elastic.address)).vested).to.be.bignumber.closeTo(shares(1918.25), SHARE_DELTA_BIG);
+        });
+
+        it('should increase total bond market capacity', async function () {
+          expect((await this.module.markets(this.elastic.address)).capacity).to.be.bignumber.closeTo(shares(9930 + 25 + 6), DEBT_DELTA);
+        });
+
+        it('should decrease total bond market token shares ignoring expansion', async function () {
+          expect((await this.module.markets(this.elastic.address)).principal).to.be.bignumber.closeTo(shares(1974.5), SHARE_DELTA_BIG);
+        });
+
+        it('should update bond market last updated timestamp', async function () {
+          expect((await this.module.markets(this.elastic.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(15)), new BN(1));
+        });
+
+        it('should not affect the bond market vesting start timestamp', async function () {
+          expect((await this.module.markets(this.elastic.address)).start).to.be.bignumber.equal(this.t3);
+        });
+
+        it('should not affect or update other bond market', async function () {
+          const m = await this.module.markets(this.token.address);
+          expect(m.start).to.be.bignumber.equal(this.t1);
+          expect(m.updated).to.be.bignumber.equal(this.t1);
+          expect(m.debt).to.be.bignumber.closeTo(shares(130), DEBT_DELTA);
+          expect(m.principal).to.be.bignumber.closeTo(shares(456), SHARE_DELTA);
+          expect(m.vested).to.be.bignumber.closeTo(shares(60), SHARE_DELTA);
+        });
+
+        it('should emit first Unstaked event with amount before expansion', async function () {
+          const e = this.res0.logs.filter(l => l.event === 'Unstaked')[0];
+          expect(e.args.user).eq(alice);
+          expect(e.args.token).eq(this.elastic.address);
+          expect(e.args.amount).to.be.bignumber.closeTo(tokens(1250), TOKEN_DELTA_BIG);
+          expect(e.args.shares).to.be.bignumber.equal(shares(50));
+        });
+
+        it('should emit second Unstaked event with amount after expansion', async function () {
+          const e = this.res1.logs.filter(l => l.event === 'Unstaked')[0];
+          expect(e.args.user).eq(bob);
+          expect(e.args.token).eq(this.elastic.address);
+          expect(e.args.amount).to.be.bignumber.closeTo(tokens(1.05 * 0.3 * 1035), TOKEN_DELTA_BIG);
+          expect(e.args.shares).to.be.bignumber.closeTo(shares(20), DEBT_DELTA);
+        });
+      });
 
     });
 
@@ -1611,6 +2155,14 @@ describe('ERC20BondStakingModule', function () {
         expect((await this.module.markets(this.token.address)).principal).to.be.bignumber.equal(shares(456));
       });
 
+      it('should update bond market last updated timestamp', async function () {
+        expect((await this.module.markets(this.token.address)).updated).to.be.bignumber.closeTo(this.t0.add(days(5)), new BN(1));
+      });
+
+      it('should not affect the bond market vesting start timestamp', async function () {
+        expect((await this.module.markets(this.token.address)).start).to.be.bignumber.equal(this.t1);
+      });
+
       it('should emit Claimed event', async function () {
         expectEvent(
           this.res,
@@ -1677,7 +2229,7 @@ describe('ERC20BondStakingModule', function () {
       it('should fail', async function () {
         await expectRevert(
           this.module.transferFrom(alice, bob, new BN(2), { from: alice }),
-          'ERC721: caller is not token owner nor approved'
+          'ERC721: caller is not token owner or approved'
         );
       });
     });
@@ -1686,7 +2238,7 @@ describe('ERC20BondStakingModule', function () {
       it('should fail', async function () {
         await expectRevert(
           this.module.safeTransferFrom(alice, bob, new BN(2), { from: alice }),
-          'ERC721: caller is not token owner nor approved'
+          'ERC721: caller is not token owner or approved'
         );
       });
     });
@@ -1696,7 +2248,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.transferFrom(alice, bob, new BN(1), { from: alice });
         await expectRevert(
           this.module.transferFrom(alice, other, new BN(1), { from: alice }),
-          'ERC721: caller is not token owner nor approved'
+          'ERC721: caller is not token owner or approved'
         );
       });
     });
@@ -1872,6 +2424,74 @@ describe('ERC20BondStakingModule', function () {
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(150), TOKEN_DELTA);
         expect(e.args.shares).to.be.bignumber.equal(shares(100));
       });
+    });
+
+  });
+
+  describe('metadata', function () {
+
+    beforeEach(async function () {
+      // configure metadata
+      this.info = await ERC20BondStakingModuleInfo.new({ from: org });
+      await this.config.setAddress(
+        web3.utils.soliditySha3('gysr.core.bond.metadata'),
+        this.info.address,
+        { from: org }
+      );
+
+      // owner creates bond module
+      this.token = await TestToken.new({ from: org });
+      this.module = await ERC20BondStakingModule.new(
+        days(10),
+        true,
+        this.config.address,
+        factory,
+        { from: owner }
+      );
+      // open bond market
+      await this.module.open(
+        this.token.address,
+        e18(3.0),
+        e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+        shares(1000),
+        shares(10000),
+        { from: owner }
+      );
+      // acquire bond tokens and approve spending
+      await this.token.transfer(alice, tokens(1000), { from: org });
+      await this.token.approve(this.module.address, tokens(100000), { from: alice });
+
+      // alice purchases bond
+      const data = web3.eth.abi.encodeParameter('address', this.token.address);
+      await this.module.stake(alice, tokens(300), data, { from: owner }); // +100e6 debt
+      this.t0 = (await this.module.markets(this.token.address)).updated;
+    });
+
+    describe('when getting bond metadata for invalid token id', function () {
+      it('should fail', async function () {
+        await expectRevert(
+          this.module.tokenURI(new BN(3)),
+          'ERC721: invalid token ID'
+        );
+      });
+    });
+
+    describe('when getting metadata for valid token id', function () {
+
+      beforeEach(async function () {
+        // get metadata
+        this.res = await this.module.tokenURI(new BN(1));
+      });
+
+      it('should return a non zero length string bond count for sender', async function () {
+        expect(this.res.length).gt(0);
+      });
+
+      it('should be equivalent to direct call to metadata library', async function () {
+        const res = await this.info.metadata(this.module.address, new BN(1), [])
+        expect(this.res).equal(res);
+      });
+
     });
 
   });

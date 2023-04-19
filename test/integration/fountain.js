@@ -530,6 +530,10 @@ describe('Fountain integration', function () {
         );
       });
 
+      it('should emit Fee event', async function () {
+        expectEvent(this.res, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(0.2) });
+      });
+
       it('report gas', async function () {
         reportGas('Pool', 'unstake', 'fountain', this.res)
       });
@@ -716,6 +720,12 @@ describe('Fountain integration', function () {
           { user: alice, amount: tokens(0.5) }
         );
       });
+
+      it('should emit Fee events', async function () {
+        expectEvent(this.res0, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(0.1) });
+        expectEvent(this.res1, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(0.1) });
+      });
+
     });
 
     describe('when alice unstakes first', function () {
@@ -978,7 +988,7 @@ describe('Fountain integration', function () {
         );
 
         // spend gysr as usual
-        await this.pool.unstake(tokens(200), [], [], { from: alice });
+        this.res = await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
       it('should transfer higher portion of GYSR to Pool contract', async function () {
@@ -996,6 +1006,10 @@ describe('Fountain integration', function () {
       it('should decrease GYSR balance of user by same amount', async function () {
         expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9.0));
       });
+
+      it('should emit Fee event', async function () {
+        expectEvent(this.res, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(0.1) });
+      });
     });
 
     describe('when fee is set to zero', function () {
@@ -1008,8 +1022,8 @@ describe('Fountain integration', function () {
           { from: org }
         );
 
-        // spend gysr as usual
-        await this.pool.unstake(tokens(200), [], [], { from: alice });
+        // unstake and vest gysr
+        this.res = await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
       it('should transfer all GYSR to Pool contract', async function () {
@@ -1027,6 +1041,10 @@ describe('Fountain integration', function () {
       it('should decrease GYSR balance of user by same amount', async function () {
         expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9.0));
       });
+
+      it('should not emit Fee event', async function () {
+        expect(this.res.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
+      });
     });
 
     describe('when treasury address is changed', function () {
@@ -1039,11 +1057,8 @@ describe('Fountain integration', function () {
           { from: org }
         );
 
-        // encode gysr amount as bytes
-        const data = web3.eth.abi.encodeParameter('uint256', tokens(1).toString());
-
-        // spend gysr as usual
-        await this.pool.unstake(tokens(200), [], [], { from: alice });
+        // unstake and vest gysr
+        this.res = await this.pool.unstake(tokens(200), [], [], { from: alice });
       });
 
       it('should transfer GYSR to Pool contract', async function () {
@@ -1064,6 +1079,10 @@ describe('Fountain integration', function () {
 
       it('should decrease GYSR balance of user by same amount', async function () {
         expect(await this.gysr.balanceOf(alice)).to.be.bignumber.equal(tokens(9.0));
+      });
+
+      it('should emit Fee event with different receiver', async function () {
+        expectEvent(this.res, 'Fee', { receiver: other, token: this.gysr.address, amount: tokens(0.2) });
       });
     });
   });
@@ -1200,6 +1219,10 @@ describe('Fountain integration', function () {
         );
       });
 
+      it('should emit Fee event', async function () {
+        expectEvent(this.res, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(0.2) });
+      });
+
       it('report gas', async function () {
         reportGas('Pool', 'claim', 'fountain', this.res)
       });
@@ -1314,6 +1337,10 @@ describe('Fountain integration', function () {
           'GysrVested',
           { user: alice, amount: tokens(0.5) }
         );
+      });
+
+      it('should emit Fee event', async function () {
+        expectEvent(this.res0, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(0.1) });
       });
 
     });

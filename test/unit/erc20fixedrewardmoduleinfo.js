@@ -175,8 +175,8 @@ describe('ERC20FixedRewardModuleInfo', function () {
       await this.module.stake(bytes32(bob), bob, shares(50), [], { from: owner });
       this.t1 = (await this.module.positions(bytes32(bob))).timestamp;
 
-      // create new stake for alice with 60 token reward, rollover 48 unvested from original position
-      await setupTime(this.t0, days(8));
+      // create new stake for alice with 60 token reward, rollover fully vested original position
+      await setupTime(this.t0, days(12));
       await this.module.stake(bytes32(alice), alice, shares(20), [], { from: owner });
       this.t2 = (await this.module.positions(bytes32(alice))).timestamp;
 
@@ -197,7 +197,6 @@ describe('ERC20FixedRewardModuleInfo', function () {
 
     });
 
-
     describe('when user get pending rewards from multiple stakes partially vested', function () {
 
       beforeEach(async function () {
@@ -206,7 +205,7 @@ describe('ERC20FixedRewardModuleInfo', function () {
       });
 
       it('should return expected reward amount', async function () {
-        const r = 0.8 * 240 + 0.6 * 108;
+        const r = 240 + 0.2 * 60;
         expect(this.res[0]).to.be.bignumber.closeTo(tokens(r), TOKEN_DELTA);
       });
 
@@ -229,7 +228,7 @@ describe('ERC20FixedRewardModuleInfo', function () {
 
     });
 
-    describe('when user previews rewards from multiple stakes partially vested stake fully vested', function () {
+    describe('when user previews rewards from multiple stakes partially vested and fully vested', function () {
 
       beforeEach(async function () {
         // preview rewards
@@ -237,12 +236,12 @@ describe('ERC20FixedRewardModuleInfo', function () {
       });
 
       it('should return expected reward amount', async function () {
-        const r = 0.8 * 240 + 0.6 * 108;
-        expect(this.res[0]).to.be.bignumber.equal(tokens(r));
+        const r = 240 + 0.2 * 60;
+        expect(this.res[0]).to.be.bignumber.closeTo(tokens(r), TOKEN_DELTA);
       });
 
       it('should return expected time vesting coefficient', async function () {
-        expect(this.res[1]).to.be.bignumber.equal(e18(0.6)); // current position
+        expect(this.res[1]).to.be.bignumber.closeTo(e18(0.2), BONUS_DELTA); // current position
       });
 
     });

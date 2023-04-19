@@ -263,7 +263,7 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
     ) external override returns (bytes[] memory results) {
         // h/t https://github.com/Uniswap/v3-periphery/blob/main/contracts/base/Multicall.sol
         results = new bytes[](data.length);
-        for (uint256 i = 0; i < data.length; i++) {
+        for (uint256 i; i < data.length; ++i) {
             (bool success, bytes memory result) = address(this).delegatecall(
                 data[i]
             );
@@ -303,6 +303,7 @@ contract Pool is IPool, IEvents, ReentrancyGuard, OwnerController {
             if (rate > 0 && rate <= 1e18 && receiver != address(0)) {
                 fee = (vested * rate) / 1e18;
                 _gysr.safeTransfer(receiver, fee);
+                emit Fee(receiver, address(_gysr), fee);
             }
             _gysrVested = _gysrVested + vested - fee;
         }

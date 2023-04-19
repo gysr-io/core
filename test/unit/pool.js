@@ -465,6 +465,10 @@ describe('Pool', function () {
           expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(2));
         });
 
+        it('should emit Fee event', async function () {
+          expectEvent(this.res, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(2) });
+        });
+
       });
 
       describe('when user unstakes with GYSR and fee is zero', function () {
@@ -497,6 +501,10 @@ describe('Pool', function () {
         it('should not transfer GYSR fee to treasury', async function () {
           expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0));
         });
+
+        it('should not emit Fee event', async function () {
+          expect(this.res.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
+        });
       });
 
       describe('when user unstakes with GYSR and fee is invalid', function () {
@@ -528,6 +536,10 @@ describe('Pool', function () {
 
         it('should not transfer GYSR fee to treasury', async function () {
           expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(0));
+        });
+
+        it('should not emit Fee event', async function () {
+          expect(this.res.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
         });
       });
 
@@ -673,7 +685,7 @@ describe('Pool', function () {
           expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(new BN(0));
         });
 
-        it('should emit GYSRSpent event', async function () {
+        it('should emit GysrSpent event', async function () {
           expectEvent(this.res, 'GysrSpent', { amount: tokens(10) });
         });
 
@@ -739,6 +751,10 @@ describe('Pool', function () {
 
         it('should transfer GYSR fee to treasury', async function () {
           expect(await this.gysr.balanceOf(treasury)).to.be.bignumber.equal(tokens(4.2));
+        });
+
+        it('should emit Fee event', async function () {
+          expectEvent(this.res, 'Fee', { receiver: treasury, token: this.gysr.address, amount: tokens(4.2) });
         });
 
       });

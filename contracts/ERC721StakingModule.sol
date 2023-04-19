@@ -102,7 +102,7 @@ contract ERC721StakingModule is IStakingModule, OwnerController {
         uint256 count = counts[sender];
 
         // stake
-        for (uint256 i = 0; i < amount; i++) {
+        for (uint256 i; i < amount; ) {
             // get token id
             uint256 id;
             uint256 pos = 132 + 32 * i;
@@ -118,6 +118,10 @@ contract ERC721StakingModule is IStakingModule, OwnerController {
 
             // transfer to module
             _token.transferFrom(sender, address(this), id);
+
+            unchecked {
+                ++i;
+            }
         }
 
         // update position
@@ -146,7 +150,7 @@ contract ERC721StakingModule is IStakingModule, OwnerController {
         require(data.length == 32 * amount, "smn7");
 
         // unstake
-        for (uint256 i = 0; i < amount; i++) {
+        for (uint256 i; i < amount; ) {
             // get token id
             uint256 id;
             {
@@ -176,6 +180,10 @@ contract ERC721StakingModule is IStakingModule, OwnerController {
 
             // transfer to user
             _token.safeTransferFrom(address(this), sender, id);
+
+            unchecked {
+                ++i;
+            }
         }
 
         // update position

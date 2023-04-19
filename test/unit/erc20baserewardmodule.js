@@ -701,6 +701,10 @@ describe('ERC20BaseRewardModule', function () {
           { token: this.token.address, amount: tokens(1000), shares: shares(997), timestamp: this.t0 }
         );
       });
+
+      it('should emit Fee event', async function () {
+        expectEvent(this.res, 'Fee', { receiver: treasury, token: this.token.address, amount: tokens(3) });
+      });
     });
 
     describe('when funded with protocol fee receiver unset', function () {
@@ -743,6 +747,57 @@ describe('ERC20BaseRewardModule', function () {
           'RewardsFunded',
           { token: this.token.address, amount: tokens(1000), shares: shares(1000), timestamp: this.t0 }
         );
+      });
+
+      it('should not emit Fee event', async function () {
+        expect(this.res.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
+      });
+
+    });
+
+    describe('when funded with protocol fee amount invalid', function () {
+
+      beforeEach(async function () {
+        // configure fee
+        await this.config.setAddressUint96(
+          web3.utils.soliditySha3('gysr.core.competitive.fund.fee'),
+          treasury,
+          e18(1.005), // greater than 1.0
+          { from: org }
+        );
+
+        // fund module
+        await this.token.transfer(owner, tokens(10000), { from: org });
+        await this.token.approve(this.module.address, tokens(100000), { from: owner });
+        this.res = await this.module.methods['fund(uint256,uint256)'](
+          tokens(1000), days(90),
+          { from: owner }
+        );
+        this.t0 = await this.module.lastUpdated();
+      });
+
+      it('should increase total locked and ignore fee', async function () {
+        expect(await this.module.totalLocked()).to.be.bignumber.equal(tokens(1000));
+      });
+
+      it('should not increase treasury balance', async function () {
+        expect(await this.token.balanceOf(treasury)).to.be.bignumber.equal(tokens(0));
+      });
+
+      it('should decrease user balance', async function () {
+        expect(await this.token.balanceOf(owner)).to.be.bignumber.equal(tokens(9000));
+      });
+
+      it('should emit RewardsFunded with full shares', async function () {
+        expectEvent(
+          this.res,
+          'RewardsFunded',
+          { token: this.token.address, amount: tokens(1000), shares: shares(1000), timestamp: this.t0 }
+        );
+      });
+
+      it('should not emit Fee event', async function () {
+        expect(this.res.logs.filter(l => l.event === 'Fee').length).to.be.equal(0);
       });
 
     });
