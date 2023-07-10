@@ -17,7 +17,9 @@ import "../interfaces/IStakingModuleInfo.sol";
 import "../interfaces/IStakingModule.sol";
 import "../interfaces/IRewardModule.sol";
 import "../interfaces/IPool.sol";
+import "../interfaces/IConfiguration.sol";
 import "../ERC20BondStakingModule.sol";
+import "./TokenUtilsInfo.sol";
 
 /**
  * @title ERC20 bond staking module info library
@@ -29,6 +31,7 @@ library ERC20BondStakingModuleInfo {
     using Strings for uint256;
     using Strings for address;
     using Address for address;
+    using TokenUtilsInfo for IERC20;
 
     uint256 public constant MAX_BONDS = 128;
 
@@ -101,7 +104,7 @@ library ERC20BondStakingModuleInfo {
         }
     }
 
-    // -- ERC20BondStakingModuleInfo ----------------------------------------------
+    // -- IMetadata -----------------------------------------------------------
 
     /**
      * @notice provide the metadata URI for a bond position
@@ -215,17 +218,78 @@ library ERC20BondStakingModuleInfo {
             );
     }
 
+    // -- ERC20BondStakingModuleInfo ------------------------------------------
+
     /**
      * @notice quote the debt share values to be issued for an amount of tokens
      * @param module address of bond staking module
      * @param token address of market
      * @param amount number of tokens to be deposited
+     * @return debt estimated debt shares issued
+     * @return okay if debt amount is within max size and capacity of market (note: this does not check reward module funding)
      */
     function quote(
         address module,
         address token,
         uint256 amount
-    ) external view returns (uint256) {
+    ) public view returns (uint256, bool) {
+        ERC20BondStakingModule m = ERC20BondStakingModule(module);
+        require(amount > 0, "bsmi2");
+
+        // get market
+        (, , uint256 mmax, uint256 mcapacity, uint256 mprincipal, , , , ) = m
+            .markets(token);
+        require(mmax > 0, "bsmi3");
+
+        // principal shares
+        uint256 principal = (mprincipal > 0)
+            ? IERC20(token).getShares(module, mprincipal, amount)
+            : amount * 1e6;
+
+        // get current price
+        uint256 price_ = price(module, token);
+
+        // debt pricing
+        uint256 debt = (principal * 1e18) / price_;
+
+        return (debt, debt <= mmax && debt <= mcapacity);
+    }
+
+    /**
+     * @notice quote the debt share values to be issued for an amount of tokens after protocol fees
+     * @param module address of bond staking module
+     * @param token address of market
+     * @param amount number of tokens to be deposited
+     * @param config address of configuration contract
+     * @return debt estimated debt shares issued
+     * @return okay if debt amount is within max size and capacity of market (note: this does not check reward module funding)
+     */
+    function quote(
+        address module,
+        address token,
+        uint256 amount,
+        address config
+    ) external view returns (uint256, bool) {
+        // get rate
+        IConfiguration cfg = IConfiguration(config);
+        (, uint256 rate) = cfg.getAddressUint96(
+            keccak256("gysr.core.bond.stake.fee")
+        );
+        // subtract fee and get quote
+        amount -= (amount * rate) / 1e18;
+        return quote(module, token, amount);
+    }
+
+    /**
+     * @notice get current price of debt share (reward token) in specified principal token shares
+     * @param module address of bond staking module
+     * @param token address of market
+     * @return price current price of reward debt share in principal token shares
+     */
+    function price(
+        address module,
+        address token
+    ) public view returns (uint256) {
         ERC20BondStakingModule m = ERC20BondStakingModule(module);
 
         // get market
@@ -240,48 +304,116 @@ library ERC20BondStakingModuleInfo {
             uint128 mstart,
             uint128 mupdated
         ) = m.markets(token);
-        require(mcapacity > 0, "bsmi2");
-
-        // principal shares
-        uint256 principal;
-
-        IERC20 tkn = IERC20(token);
-        uint256 total = tkn.balanceOf(address(this));
-
-        // get staking shares at current rate
-        principal = (mprincipal > 0)
-            ? (mprincipal * amount) / total
-            : amount * 1e6;
+        require(mmax > 0, "bsmi4");
 
         // estimate debt decay
-        uint256 elapsed = block.timestamp - mupdated;
-        uint256 period = m.period();
-        if (elapsed < period) {
-            mdebt = mdebt - (mdebt * elapsed) / period; // approximation, exact value lower bound
+        uint256 end = mstart + m.period();
+        if (block.timestamp < end) {
+            mdebt -= (mdebt * (block.timestamp - mupdated)) / (end - mupdated); // approximation, exact value lower bound
         } else {
             mdebt = 0;
         }
 
-        // debt pricing
-        uint256 debt = (principal * 1e18) / (mprice + (mcoeff * mdebt) / 1e18);
-        require(debt <= mmax, "bsmi3");
-        require(debt <= mcapacity, "bsmi4");
-
-        return debt;
+        // current price
+        return mprice + (mcoeff * mdebt) / 1e24;
     }
 
     /**
      * @notice preview amount of deposit to be returned for an unstake
      * @param module address of bond staking module
      * @param id bond position identifier
-     * @param amount number of tokens to be unstaked
+     * @param amount number of tokens to be unstaked (pass 0 for all)
+     * @return principal token amount returned
+     * @return debt shares to be redeemed (possibly not all vested)
+     * @return okay if unstake is valid for bond id and principal amount
      */
-    function returnable(
+    function unstakeable(
         address module,
         uint256 id,
         uint256 amount
-    ) external view returns (uint256) {
-        // TODO
-        return 0;
+    ) external view returns (uint256, uint256, bool) {
+        ERC20BondStakingModule m = ERC20BondStakingModule(module);
+
+        // get bond and market
+        (
+            address btoken,
+            uint64 btimestamp,
+            uint256 bprincipal,
+            uint256 bdebt
+        ) = m.bonds(id);
+        require(btimestamp > 0, "bsmi5");
+        (, , , , uint256 mprincipal, , , , ) = m.markets(btoken);
+
+        if (!m.burndown()) return (0, bdebt, amount == 0);
+
+        uint256 period = m.period();
+        uint256 elapsed = block.timestamp - btimestamp;
+
+        // unstake specific nonzero amount
+        if (amount > 0) {
+            if (elapsed > period) return (0, bdebt, false);
+
+            uint256 shares = IERC20(btoken).getShares(
+                module,
+                mprincipal,
+                amount
+            );
+            uint256 burned = (shares * period) / (period - elapsed);
+            uint256 debt = (bdebt * burned) / bprincipal;
+            if (burned < bprincipal) return (amount, debt, true); // valid unstake
+            // let invalid unstakes fall through to next block
+        }
+
+        // compute max returnable
+        uint256 shares = elapsed < period
+            ? (bprincipal * (period - elapsed)) / period
+            : 0;
+
+        return (
+            IERC20(btoken).getAmount(module, mprincipal, shares),
+            bdebt,
+            amount == 0
+        );
+    }
+
+    /**
+     * @notice get current vested balance of specified principal token
+     * @param module address of bond staking module
+     * @param token address of market
+     * @return withdrawable amount of principal token
+     */
+    function withdrawable(
+        address module,
+        address token
+    ) public view returns (uint256) {
+        ERC20BondStakingModule m = ERC20BondStakingModule(module);
+
+        // get market
+        (
+            ,
+            ,
+            ,
+            ,
+            uint256 mprincipal,
+            uint256 mvested,
+            ,
+            uint128 mstart,
+            uint128 mupdated
+        ) = m.markets(token);
+        require(mstart > 0, "bsmi6");
+
+        if (!m.burndown()) return mvested;
+
+        // estimate principal vesting
+        uint256 end = mstart + m.period();
+        if (block.timestamp < end) {
+            mvested +=
+                ((mprincipal - mvested) * (block.timestamp - mupdated)) /
+                (end - mupdated); // approximation, exact upper lower bound
+        } else {
+            mvested = mprincipal;
+        }
+
+        return IERC20(token).getAmount(module, mprincipal, mvested);
     }
 }

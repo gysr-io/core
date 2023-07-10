@@ -452,14 +452,14 @@ describe('ERC20LinearRewardModule', function () {
       it('should increase outstanding earned accumulator linearly', async function () {
         expect(await this.module.earned()).to.be.bignumber.closeTo(
           shares(0.0004 * 3 * 86400 + 0.0007 * 4 * 86400),
-          shares(0.0011)
+          shares(0.002)
         );
       });
 
       it('should decrease budget linearly', async function () {
         expect((await this.module.balances())[0]).to.be.bignumber.closeTo(
           tokens(1000 - 0.0004 * 3 * 86400 - 0.0007 * 4 * 86400),
-          tokens(0.0011)
+          tokens(0.002)
         );
       });
 

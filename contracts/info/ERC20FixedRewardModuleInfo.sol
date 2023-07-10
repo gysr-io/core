@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import "../interfaces/IRewardModule.sol";
 import "../ERC20FixedRewardModule.sol";
+import "./TokenUtilsInfo.sol";
 
 /**
  * @title ERC20 fixed reward module info library
@@ -20,6 +21,8 @@ import "../ERC20FixedRewardModule.sol";
  * additional information about the ERC20FixedRewardModule contract.
  */
 library ERC20FixedRewardModuleInfo {
+    using TokenUtilsInfo for IERC20;
+
     /**
      * @notice get all token metadata
      * @param module address of reward module
@@ -108,10 +111,7 @@ library ERC20FixedRewardModuleInfo {
         if (r == 0) return (0, 0);
 
         // convert to tokens
-        {
-            IERC20 tkn = IERC20(m.tokens()[0]);
-            r = (r * tkn.balanceOf(module)) / m.rewards();
-        }
+        r = IERC20(m.tokens()[0]).getAmount(module, m.rewards(), r);
 
         // get vesting coeff
         uint256 v = 1e18;
@@ -160,6 +160,6 @@ library ERC20FixedRewardModuleInfo {
     function withdrawable(address module) public view returns (uint256) {
         ERC20FixedRewardModule m = ERC20FixedRewardModule(module);
         IERC20 tkn = IERC20(m.tokens()[0]);
-        return (budget(module) * tkn.balanceOf(module)) / m.rewards();
+        return tkn.getAmount(module, m.rewards(), budget(module));
     }
 }

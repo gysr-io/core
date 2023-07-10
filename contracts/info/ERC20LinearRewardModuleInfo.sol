@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import "../interfaces/IRewardModule.sol";
 import "../ERC20LinearRewardModule.sol";
+import "./TokenUtilsInfo.sol";
 
 /**
  * @title ERC20 linear reward module info library
@@ -20,6 +21,8 @@ import "../ERC20LinearRewardModule.sol";
  * additional information about the ERC20LinearRewardModule contract.
  */
 library ERC20LinearRewardModuleInfo {
+    using TokenUtilsInfo for IERC20;
+
     /**
      * @notice get all token metadata
      * @param module address of reward module
@@ -111,8 +114,7 @@ library ERC20LinearRewardModuleInfo {
         if (r == 0) return 0;
 
         IERC20 tkn = IERC20(m.tokens()[0]);
-
-        return (r * tkn.balanceOf(module)) / m.rewardShares();
+        return tkn.getAmount(module, m.rewardShares(), r);
     }
 
     /**
@@ -180,6 +182,6 @@ library ERC20LinearRewardModuleInfo {
         budget -= committed;
 
         IERC20 tkn = IERC20(m.tokens()[0]);
-        return (budget * tkn.balanceOf(module)) / m.rewardShares();
+        return tkn.getAmount(module, m.rewardShares(), budget);
     }
 }

@@ -16,6 +16,8 @@ npm install @gysr/core
 
 See the [documentation](https://docs.gysr.io/developers) to learn more about interacting with the GYSR protocol.
 
+*Note: the package is published with solidity `^0.8.18` compatibility, but core contracts have only been tested and audited with solidity `0.8.18` exact.*
+
 
 ## Development
 
@@ -46,7 +48,7 @@ npx hardhat compile && npx hardhat test --grep ERC20CompetitiveRewardModule
 ## Deploy
 
 Copy `.env.template` to `.env` and define the `INFURA_KEY`, `DEPLOYER_INDEX`,
-and `TREASURY_ADDRESS` variables.
+and `ETHERSCAN_KEY` variables.
 
 
 To deploy GYSR token to Goerli
@@ -55,6 +57,14 @@ npx hardhat run --network goerli scripts/i_deploy_token.js
 ```
 
 Once GYSR token is deployed, define the `GYSR_ADDRESS` variable in your `.env` file.
+
+
+To deploy the configuration contract to Goerli
+```
+npx hardhat run --network goerli scripts/i_deploy_config.js
+```
+
+Once the configuration contract is deployed, define the `CONFIG_ADDRESS` variable in your `.env` file.
 
 
 To deploy the factory contract to Goerli
@@ -81,5 +91,5 @@ Follow the remaining migration steps to deploy all contracts and libraries.
 
 To verify a contract on Goerli
 ```
-npx hardhat verify --network goerli --contract contracts/PoolFactory.sol:PoolFactory 0xpoolfactory 0xgysrtoken 0xtreasury
+npx hardhat verify --network goerli --contract contracts/PoolFactory.sol:PoolFactory 0xpoolfactory 0xgysrtoken 0xconfig
 ```

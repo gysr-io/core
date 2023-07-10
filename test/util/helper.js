@@ -1,7 +1,6 @@
 const { BN, time } = require('@openzeppelin/test-helpers');
-const { fromWei, toWei, padLeft, hexToBytes } = require('web3-utils');
+const { fromWei, toWei, padLeft, hexToBytes, numberToHex } = require('web3-utils');
 const { appendFileSync, existsSync, unlinkSync } = require('fs');
-const { parseBytes32String } = require('ethers/lib/utils');
 
 
 // same const used for GYSR, test token, and bonus value returns
@@ -66,8 +65,9 @@ function rate(x) {
   return toFixedPointBigNumber(x, 10, DECIMALS);
 };
 
-function bytes32(address) {
-  return padLeft(address, 64).toLowerCase();
+function bytes32(x) {
+  if (typeof x == 'number') x = numberToHex(new BN(x))
+  return padLeft(x, 64).toLowerCase();
 }
 
 async function now() {
@@ -131,6 +131,11 @@ async function setupTime(t0, delta) {
   return time.increaseTo(t0.add(delta).sub(new BN(1)));
 }
 
+function compareAddresses(a, b) {
+  // for sorting list of addresses
+  return a.localeCompare(b, 'en', { sensitivity: 'base' });
+}
+
 function reportGas(contract, method, description, tx) {
   if (!gas_report_initialized) {
     // reset
@@ -163,6 +168,7 @@ module.exports = {
   rate,
   reportGas,
   setupTime,
+  compareAddresses,
   DECIMALS,
   FEE,
 };

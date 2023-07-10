@@ -3,7 +3,7 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const { ethers } = require('hardhat');
+const { ethers, network } = require('hardhat');
 const { LedgerSigner } = require('@anders-t/ethers-ledger');
 
 const { DEPLOYER_INDEX } = process.env;
@@ -14,7 +14,7 @@ async function main() {
   console.log('Deploying from address:', await ledger.getAddress())
 
   const GeyserToken = await ethers.getContractFactory('GeyserToken');
-  const token = await GeyserToken.connect(ledger).deploy();
+  const token = await GeyserToken.connect(ledger).deploy({ maxFeePerGas: network.config.gas, maxPriorityFeePerGas: network.config.priority });
   await token.deployed();
   console.log('GeyserToken deployed to:', token.address);
 }

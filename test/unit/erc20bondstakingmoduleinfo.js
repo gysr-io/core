@@ -12,7 +12,7 @@ const {
   bytes32,
   e6,
   e18,
-  DECIMALS
+  setupTime
 } = require('../util/helper');
 
 const ERC20BondStakingModuleInfo = artifacts.require('ERC20BondStakingModuleInfo');
@@ -26,9 +26,9 @@ const TestElasticToken = artifacts.require('TestElasticToken')
 
 
 describe('ERC20BondStakingModuleInfo', function () {
-  let org, owner, alice, bob, other, config, factory;
+  let org, owner, alice, bob, other, factory;
   before(async function () {
-    [org, owner, alice, bob, other, config, factory] = await web3.eth.getAccounts();
+    [org, owner, alice, bob, other, factory] = await web3.eth.getAccounts();
   });
 
   beforeEach('setup', async function () {
@@ -87,13 +87,181 @@ describe('ERC20BondStakingModuleInfo', function () {
       });
 
       it('should return empty list of shares', async function () {
-        expect(this.res.accounts_.length).eq(0);
+        expect(this.res.shares_.length).eq(0);
       });
     });
 
   });
 
-  describe('when markets have been created and user has purchased bonds', function () {
+  describe('when markets have been created', function () {
+
+    beforeEach(async function () {
+      // create module
+      this.module = await ERC20BondStakingModule.new(
+        days(30),
+        true,
+        this.config.address,
+        factory,
+        { from: owner }
+      );
+
+      // open markets
+      await this.module.open(
+        this.elastic.address,
+        e18(0.80),
+        e18(0.25 / 1000), // (1.05 - 0.80) / 1000e6
+        shares(100),
+        shares(1000),
+        { from: owner }
+      );
+      await this.module.open(
+        this.lp.address,
+        e18(0.10),
+        e18(0.05 / 1000), // (0.15 - 0.10) / 1000e6
+        shares(100),
+        shares(1000),
+        { from: owner }
+      );
+    });
+
+    describe('when getting tokens', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.tokens(this.module.address);
+      });
+
+      it('should return lists with length two', async function () {
+        expect(this.res.addresses_.length).eq(2);
+        expect(this.res.names_.length).to.equal(2);
+        expect(this.res.symbols_.length).to.equal(2);
+        expect(this.res.decimals_.length).to.equal(2);
+      });
+
+      it('should return staking token addresses', async function () {
+        expect(this.res.addresses_[0]).to.equal(this.elastic.address);
+        expect(this.res.addresses_[1]).to.equal(this.lp.address);
+      });
+
+      it('should return staking token names', async function () {
+        expect(this.res.names_[0]).to.equal("TestElasticToken");
+        expect(this.res.names_[1]).to.equal("TestLiquidityToken");
+      });
+
+      it('should return staking token symbols', async function () {
+        expect(this.res.symbols_[0]).to.equal("ELASTIC");
+        expect(this.res.symbols_[1]).to.equal("LP-TKN");
+      });
+
+      it('should return staking token decimals', async function () {
+        expect(this.res.decimals_[0]).to.be.bignumber.equal(new BN(18));
+        expect(this.res.decimals_[1]).to.be.bignumber.equal(new BN(18));
+      });
+
+    });
+
+    describe('when user gets positions', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.positions(this.module.address, alice, []);
+      });
+
+      it('should return empty list of accounts', async function () {
+        expect(this.res.accounts_.length).eq(0);
+      });
+
+      it('should return empty list of shares', async function () {
+        expect(this.res.shares_.length).eq(0);
+      });
+    });
+
+    describe('when getting bond metadata for non existent token id', function () {
+      it('should fail', async function () {
+        await expectRevert.unspecified(
+          this.info.metadata(this.module.address, new BN(3), []),
+          // 'bsmi1'
+        );
+      });
+    });
+
+    describe('when getting current prices', function () {
+
+      it('should return floor price for first token', async function () {
+        const res = await this.info.price(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.equal(e18(0.80));
+      });
+
+      it('should return floor price for second token', async function () {
+        const res = await this.info.price(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.equal(e18(0.10));
+      });
+
+    });
+
+    describe('when getting quote', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.quote(this.module.address, this.lp.address, tokens(5));
+      });
+
+      it('should expected number of debt shares', async function () {
+        expect(this.res[0]).to.be.bignumber.equal(shares(50));
+      });
+
+      it('should return okay', async function () {
+        expect(this.res[1]).to.be.true;
+      });
+    });
+
+    describe('when getting quote on invalid amount', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.quote(this.module.address, this.lp.address, tokens(20));
+      });
+
+      it('should return expected number of debt shares', async function () {
+        expect(this.res[0]).to.be.bignumber.equal(shares(200));
+      });
+
+      it('should return validity false', async function () {
+        expect(this.res[1]).to.be.false;
+      });
+    });
+
+    describe('when getting quote with fee', function () {
+
+      beforeEach(async function () {
+        await this.config.setAddressUint96(
+          web3.utils.soliditySha3('gysr.core.bond.stake.fee'),
+          other,
+          e18(0.02),
+          { from: org }
+        );
+        this.res = await this.info.methods['quote(address,address,uint256,address)'](
+          this.module.address, this.lp.address, tokens(5), this.config.address);
+      });
+
+      it('should return expected number of debt shares', async function () {
+        expect(this.res[0]).to.be.bignumber.equal(shares(49));
+      });
+
+      it('should return okay', async function () {
+        expect(this.res[1]).to.be.true;
+      });
+    });
+
+    describe('when getting unstakeable for non existent bond id', function () {
+      it('should fail', async function () {
+        await expectRevert.unspecified(
+          this.info.unstakeable(this.module.address, new BN(3), new BN(0)),
+          // 'bsmi5'
+        );
+      });
+    });
+
+  });
+
+
+  describe('when user has purchased bonds', function () {
 
     beforeEach(async function () {
       // create pool
@@ -131,7 +299,7 @@ describe('ERC20BondStakingModuleInfo', function () {
       await this.module.open(
         this.elastic.address,
         e18(0.80),
-        e18(0.25).div(e6(1000)), // (1.05 - 0.80) / 1000e6
+        e18(0.25 / 1000), // (1.05 - 0.80) / 1000e6
         shares(100),
         shares(1000),
         { from: owner }
@@ -139,7 +307,7 @@ describe('ERC20BondStakingModuleInfo', function () {
       await this.module.open(
         this.lp.address,
         e18(0.10),
-        e18(0.05).div(e6(1000)), // (0.15 - 0.10) / 1000e6
+        e18(0.05 / 1000), // (0.15 - 0.10) / 1000e6
         shares(100),
         shares(1000),
         { from: owner }
@@ -277,7 +445,279 @@ describe('ERC20BondStakingModuleInfo', function () {
       });
     });
 
-    // TODO test quotes, test returnable
+    describe('when getting current prices', function () {
+
+      it('should return increased price for first token', async function () {
+        // 0.8 + 0.25 * 100 / 1000
+        const res = await this.info.price(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.closeTo(e18(0.825), e18(0.0001));
+      });
+
+      it('should return increased price for second token', async function () {
+        // 0.1 + 0.05 * 50 / 1000
+        const res = await this.info.price(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.closeTo(e18(0.1025), e18(0.0001));
+      });
+
+    });
+
+    describe('when getting prices after time has elapsed', function () {
+
+      it('should return decayed price increase for first token', async function () {
+        // 0.8 + 0.25 * 100 / 1000 * 0.8
+        await setupTime(this.t0, days(6));
+        const res = await this.info.price(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.closeTo(e18(0.820), e18(0.0001));
+      });
+
+      it('should return decayed price increase for second token', async function () {
+        // 0.1 + 0.05 * 50 / 1000 * 0.5
+        await setupTime(this.t0, days(15));
+        const res = await this.info.price(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.closeTo(e18(0.10125), e18(0.0001));
+      });
+
+    });
+
+    describe('when getting prices after full period has elapsed', function () {
+
+      it('should return floor price for first token', async function () {
+        await setupTime(this.t0, days(31));
+        const res = await this.info.price(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.equal(e18(0.8));
+      });
+
+      it('should return floor price for second token', async function () {
+        await setupTime(this.t0, days(31));
+        const res = await this.info.price(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.equal(e18(0.1));
+      });
+
+    });
+
+    describe('when getting quote', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.quote(this.module.address, this.lp.address, tokens(5));
+      });
+
+      it('should expected number of debt shares', async function () {
+        expect(this.res[0]).to.be.bignumber.closeTo(shares(5 / 0.1025), shares(0.001));
+      });
+
+      it('should return okay', async function () {
+        expect(this.res[1]).to.be.true;
+      });
+    });
+
+    describe('when getting quote on invalid amount', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.quote(this.module.address, this.lp.address, tokens(20));
+      });
+
+      it('should expected number of debt shares', async function () {
+        expect(this.res[0]).to.be.bignumber.closeTo(shares(20 / 0.1025), shares(0.001));
+      });
+
+      it('should return validity false', async function () {
+        expect(this.res[1]).to.be.false;
+      });
+    });
+
+    describe('when getting quote with fee', function () {
+
+      beforeEach(async function () {
+        await this.config.setAddressUint96(
+          web3.utils.soliditySha3('gysr.core.bond.stake.fee'),
+          other,
+          e18(0.02),
+          { from: org }
+        );
+        this.res = await this.info.methods['quote(address,address,uint256,address)'](
+          this.module.address, this.lp.address, tokens(5), this.config.address);
+      });
+
+      it('should return expected number of debt shares', async function () {
+        expect(this.res[0]).to.be.bignumber.closeTo(shares(4.9 / 0.1025), shares(0.001));
+      });
+
+      it('should return okay', async function () {
+        expect(this.res[1]).to.be.true;
+      });
+    });
+
+    describe('when getting unstakeable on new bond', function () {
+
+      beforeEach(async function () {
+        this.res = await this.info.unstakeable(this.module.address, new BN(1), new BN(0));
+      });
+
+      it('should return full principal amount', async function () {
+        expect(this.res[0]).to.be.bignumber.closeTo(tokens(80), tokens(0.001));
+      });
+
+      it('should return full debt amount', async function () {
+        expect(this.res[1]).to.be.bignumber.equal(shares(100));
+      });
+
+      it('should return okay for valid unstake', async function () {
+        expect(this.res[2]).to.be.true;
+      });
+
+    });
+
+
+    describe('when getting unstakeable on partially vested bond', function () {
+
+      beforeEach(async function () {
+        await setupTime(this.t0, days(15));
+        this.res = await this.info.unstakeable(this.module.address, new BN(1), new BN(0));
+      });
+
+      it('should return half the principal amount', async function () {
+        expect(this.res[0]).to.be.bignumber.closeTo(tokens(40), tokens(0.001));
+      });
+
+      it('should return full debt amount', async function () {
+        expect(this.res[1]).to.be.bignumber.equal(shares(100));
+      });
+
+      it('should return okay for valid unstake', async function () {
+        expect(this.res[2]).to.be.true;
+      });
+
+    });
+
+    describe('when checking a valid unstakeable amount on a partially vested bond', function () {
+
+      beforeEach(async function () {
+        await setupTime(this.t0, days(15));
+        this.res = await this.info.unstakeable(this.module.address, new BN(1), tokens(30));
+      });
+
+      it('should return the requested amount', async function () {
+        expect(this.res[0]).to.be.bignumber.equal(tokens(30));
+      });
+
+      it('should return prorated debt amount', async function () {
+        expect(this.res[1]).to.be.bignumber.closeTo(shares(75), shares(0.001));
+      });
+
+      it('should return okay for valid unstake', async function () {
+        expect(this.res[2]).to.be.true;
+      });
+
+    });
+
+    describe('when checking an invalid unstakeable amount on a partially vested bond', function () {
+
+      beforeEach(async function () {
+        await setupTime(this.t0, days(15));
+        this.res = await this.info.unstakeable(this.module.address, new BN(1), tokens(45));
+      });
+
+      it('should return the max returnable amount', async function () {
+        expect(this.res[0]).to.be.bignumber.closeTo(tokens(40), tokens(0.001));
+      });
+
+      it('should return full debt amount', async function () {
+        expect(this.res[1]).to.be.bignumber.equal(shares(100));
+      });
+
+      it('should return false for invalid unstake', async function () {
+        expect(this.res[2]).to.be.false;
+      });
+    });
+
+    describe('when checking unstakeable amount on a fully vested bond', function () {
+
+      beforeEach(async function () {
+        await setupTime(this.t0, days(31));
+        this.res = await this.info.unstakeable(this.module.address, new BN(1), new BN(0));
+      });
+
+      it('should return zero returnable', async function () {
+        expect(this.res[0]).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should return full debt amount', async function () {
+        expect(this.res[1]).to.be.bignumber.equal(shares(100));
+      });
+
+      it('should return okay for valid unstake', async function () {
+        expect(this.res[2]).to.be.true;
+      });
+
+    });
+
+    describe('when checking nonzero unstakeable amount on a fully vested bond', function () {
+
+      beforeEach(async function () {
+        await setupTime(this.t0, days(31));
+        this.res = await this.info.unstakeable(this.module.address, new BN(1), tokens(5));
+      });
+
+      it('should return zero returnable', async function () {
+        expect(this.res[0]).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should return full debt amount', async function () {
+        expect(this.res[1]).to.be.bignumber.equal(shares(100));
+      });
+
+      it('should return false for invalid unstake', async function () {
+        expect(this.res[2]).to.be.false;
+      });
+
+    });
+
+    describe('when getting withdrawable amounts initially', function () {
+
+      it('should return zero vested for first token', async function () {
+        const res = await this.info.withdrawable(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.closeTo(new BN(0), tokens(0.001));
+      });
+
+      it('should return zero vested for second token', async function () {
+        const res = await this.info.withdrawable(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.closeTo(new BN(0), tokens(0.0001));
+      });
+
+    });
+
+    describe('when getting withdrawable amounts have some time has elapsed', function () {
+
+      it('should return zero vested for first token', async function () {
+        await setupTime(this.t0, days(24));
+        const res = await this.info.withdrawable(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.closeTo(tokens(64), tokens(0.001));
+      });
+
+      it('should return zero vested for second token', async function () {
+        await setupTime(this.t0, days(24));
+        const res = await this.info.withdrawable(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.closeTo(tokens(4), tokens(0.0001));
+      });
+
+    });
+
+    describe('when getting withdrawable amounts after full period has elapsed', function () {
+
+      it('should return full principal balance as vested for first token', async function () {
+        await setupTime(this.t0, days(31));
+        const res = await this.info.withdrawable(this.module.address, this.elastic.address);
+        expect(res).to.be.bignumber.equal(tokens(80));
+      });
+
+      it('should return full principal balance as vested for second token', async function () {
+        await setupTime(this.t0, days(31));
+        const res = await this.info.withdrawable(this.module.address, this.lp.address);
+        expect(res).to.be.bignumber.equal(tokens(5));
+      });
+
+    });
+
 
   });
 

@@ -224,10 +224,10 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
         }
 
         // pricing
-        uint256 debt = (minted * 1e18) / (m.price + (m.coeff * m.debt) / 1e18);
+        uint256 debt = (minted * 1e18) / (m.price + (m.coeff * m.debt) / 1e24);
         require(debt <= m.max, "bsm5");
         require(debt <= capacity, "bsm6");
-        require(debt >= minimum, "bsm7");
+        require(debt > minimum, "bsm7");
 
         // create new bond
         uint256 id = nonce;
@@ -298,13 +298,10 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
             require(shares > 0, "bsm13");
             uint256 bprincipal = b.principal;
             uint256 bdebt = debt;
-            require(
-                shares < (bprincipal * (period - elapsed)) / period,
-                "bsm14"
-            ); // strictly less than total unvested
 
             // compute burned principal and debt shares
             uint256 burned = (shares * period) / (period - elapsed);
+            require(burned < bprincipal, "bsm14"); // strictly less than total principal
             debt = (bdebt * burned) / bprincipal;
 
             // decrease bond position
@@ -404,7 +401,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
      * @notice open a new bond market
      * @param token the principal token that will be deposited
      * @param price minimum and starting price of the bond in tokens
-     * @param coeff bond pricing coefficient
+     * @param coeff bond pricing coefficient in price increase per debt shares (24 decimals)
      * @param max maximum size for an individual bond in debt shares
      * @param capacity the total debt available for this market in shares
      */
@@ -505,6 +502,7 @@ contract ERC20BondStakingModule is IStakingModule, OwnerController, ERC721 {
 
         IERC20 tkn = IERC20(token);
         uint256 shares = tkn.getShares(m.principal, amount);
+        require(shares > 0);
         require(shares <= m.vested, "bsm31");
 
         // withdraw

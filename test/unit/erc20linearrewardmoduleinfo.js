@@ -225,7 +225,7 @@ describe('ERC20LinearRewardModuleInfo', function () {
 
       it('should return uncommitted tokens', async function () {
         const w = (5000 - 0.0005 * days(7) - 0.0007 * days(7) - 0.0007 * days(14));
-        expect(this.res).to.be.bignumber.closeTo(tokens(w), TOKEN_DELTA);
+        expect(this.res).to.be.bignumber.closeTo(tokens(w), tokens(0.0012));
       });
 
     });

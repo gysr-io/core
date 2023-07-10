@@ -13,6 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../interfaces/IRewardModule.sol";
 import "../ERC20FriendlyRewardModule.sol";
 import "../GysrUtils.sol";
+import "./TokenUtilsInfo.sol";
 
 /**
  * @title ERC20 friendly reward module info library
@@ -22,6 +23,7 @@ import "../GysrUtils.sol";
  */
 library ERC20FriendlyRewardModuleInfo {
     using GysrUtils for uint256;
+    using TokenUtilsInfo for IERC20;
 
     /**
      * @notice get all token metadata
@@ -143,8 +145,7 @@ library ERC20FriendlyRewardModuleInfo {
 
         address tkn = m.tokens()[0];
         return (
-            (reward * IERC20Metadata(tkn).balanceOf(module)) /
-                m.totalShares(tkn),
+            IERC20(tkn).getAmount(module, m.totalShares(tkn), reward),
             reward > 0 ? (reward * 1e18) / bonusSum : 0,
             reward > 0 ? (bonusSum * 1e18) / rawSum : 0
         );
@@ -175,13 +176,13 @@ library ERC20FriendlyRewardModuleInfo {
      */
     function unlocked(address module) public view returns (uint256) {
         ERC20FriendlyRewardModule m = ERC20FriendlyRewardModule(module);
-        IERC20Metadata tkn = IERC20Metadata(m.tokens()[0]);
+        IERC20 tkn = IERC20(m.tokens()[0]);
         uint256 totalShares = m.totalShares(address(tkn));
         if (totalShares == 0) {
             return 0;
         }
         uint256 shares = unlockable(module);
-        uint256 amount = (shares * tkn.balanceOf(module)) / totalShares;
+        uint256 amount = tkn.getAmount(module, totalShares, shares);
         return m.totalUnlocked() + amount;
     }
 

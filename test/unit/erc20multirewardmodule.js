@@ -14,6 +14,7 @@ const {
   toFixedPointBigNumber,
   fromFixedPointBigNumber,
   setupTime,
+  compareAddresses,
   DECIMALS
 } = require('../util/helper');
 
@@ -696,6 +697,20 @@ describe('ERC20MultiRewardModule', function () {
       });
     });
 
+    describe('when reward tokens are provided unsorted', function () {
+      it('should revert', async function () {
+        const tokens = [this.token.address, this.elastic.address]
+        tokens.sort(compareAddresses);
+        tokens.reverse();
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
+          [true, 0, 2, ...tokens]);
+        await expectRevert(
+          this.module.claim(bytes32(alice), alice, alice, shares(100), data, { from: owner }),
+          'mrm14'
+        )
+      });
+    });
+
     describe('when one user claims all', function () {
 
       beforeEach(async function () {
@@ -703,8 +718,10 @@ describe('ERC20MultiRewardModule', function () {
         // token: 10 days @ 5 / 100 = 0.50, 10 days @ 5 / 250 = 0.2, 50 days @ 5 / 400 = 0.625
         // elastic: 20 days @ 20 / 250 = 1.6
         await setupTime(this.t0, days(70));
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
         const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
-          [true, 0, 2, this.token.address, this.elastic.address]);
+          [true, 0, 2, ...tokens]);
         this.res = await this.module.claim(bytes32(alice), alice, alice, 0, data, { from: owner });
         this.t1 = new BN((await web3.eth.getBlock('latest')).timestamp);
 
@@ -781,7 +798,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit first RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.token.address)[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.token.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r0), TOKEN_DELTA);
@@ -789,7 +806,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit second RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[1];
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.elastic.address)[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.elastic.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r1), TOKEN_DELTA);
@@ -805,8 +822,10 @@ describe('ERC20MultiRewardModule', function () {
         // alice claims on all tokens
         // token: 10 days @ 5 / 100 = 0.50, 10 days @ 5 / 250 = 0.2, 20 days @ 5 / 400 = 0.25
         await setupTime(this.t0, days(40));
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
         const data0 = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
-          [true, 0, 2, this.token.address, this.elastic.address]);
+          [true, 0, 2, ...tokens]);
         this.res0 = await this.module.claim(bytes32(alice), alice, alice, 0, data0, { from: owner });
 
         // first stake @ 35/90 vesting, second stake @ 20/90 vesting
@@ -818,7 +837,7 @@ describe('ERC20MultiRewardModule', function () {
         // elastic: 5 days @ 20 / 250 = 0.4
         await setupTime(this.t0, days(55));
         const data1 = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
-          [true, 0, 1, this.token.address, this.elastic.address]);
+          [true, 0, 1, ...tokens]);
         this.res1 = await this.module.claim(bytes32(bob), bob, bob, 0, data1, { from: owner });
 
         // stake @ 45/90 vesting
@@ -922,7 +941,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit first RewardsDistributed event for second user', async function () {
-        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.token.address)[0];
         expect(e.args.user).eq(bob);
         expect(e.args.token).eq(this.token.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r1t), TOKEN_DELTA);
@@ -930,7 +949,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit second RewardsDistributed event for second user', async function () {
-        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed')[1];
+        const e = this.res1.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.elastic.address)[0];
         expect(e.args.user).eq(bob);
         expect(e.args.token).eq(this.elastic.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r1e), TOKEN_DELTA);
@@ -946,8 +965,10 @@ describe('ERC20MultiRewardModule', function () {
         // alice claims on first position, fully vested
         await setupTime(this.t0, days(70));
         await setupTime(this.t0, days(100));
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
         const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
-          [false, 0, 1, this.token.address, this.elastic.address]);
+          [false, 0, 1, ...tokens]);
         this.res = await this.module.claim(bytes32(alice), alice, alice, 0, data, { from: owner });
 
         // token: 10 days @ 5 / 100 = 0.50, 10 days @ 5 / 250 = 0.2, 80 days @ 5 / 400 = 1.0
@@ -1023,7 +1044,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit first RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.token.address)[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.token.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r0), TOKEN_DELTA);
@@ -1031,7 +1052,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit second RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[1];
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.elastic.address)[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.elastic.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r1), TOKEN_DELTA);
@@ -1147,12 +1168,27 @@ describe('ERC20MultiRewardModule', function () {
       });
     });
 
+    describe('when unsorted reward tokens are provided', function () {
+      it('should revert', async function () {
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
+        tokens.reverse();
+        const data = web3.eth.abi.encodeParameters(['address', 'address'], tokens);
+        await expectRevert(
+          this.module.unstake(bytes32(alice), alice, alice, shares(100), data, { from: owner }),
+          'mrm7'
+        )
+      });
+    });
+
     describe('when one user unstakes all', function () {
 
       beforeEach(async function () {
-        // alice claims on all tokens
+        // alice unstakes on all tokens
         await setupTime(this.t0, days(70));
-        const data = web3.eth.abi.encodeParameters(['address', 'address'], [this.token.address, this.elastic.address]);
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
+        const data = web3.eth.abi.encodeParameters(['address', 'address'], tokens);
         this.res = await this.module.unstake(bytes32(alice), alice, alice, shares(250), data, { from: owner });
         this.t1 = new BN((await web3.eth.getBlock('latest')).timestamp);
 
@@ -1212,7 +1248,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit first RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[0];
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.token.address)[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.token.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r0), TOKEN_DELTA);
@@ -1220,7 +1256,7 @@ describe('ERC20MultiRewardModule', function () {
       });
 
       it('should emit second RewardsDistributed event', async function () {
-        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed')[1];
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.elastic.address)[0];
         expect(e.args.user).eq(alice);
         expect(e.args.token).eq(this.elastic.address);
         expect(e.args.amount).to.be.bignumber.closeTo(tokens(this.r1), TOKEN_DELTA);
@@ -1300,7 +1336,7 @@ describe('ERC20MultiRewardModule', function () {
 
     describe('when reward token has not been initialized', function () {
       it('should revert', async function () {
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address'], [0, 1, this.feeToken.address]);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address'], [true, 0, 1, this.feeToken.address]);
         await expectRevert(
           this.module.update(bytes32(alice), alice, data, { from: owner }),
           'mrm23'
@@ -1310,8 +1346,8 @@ describe('ERC20MultiRewardModule', function () {
 
     describe('when too many reward tokens are provided', function () {
       it('should revert', async function () {
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address', 'address', 'address'],
-          [0, 0, this.token.address, this.elastic.address, this.feeToken.address]);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address', 'address'],
+          [true, 0, 0, this.token.address, this.elastic.address, this.feeToken.address]);
         await expectRevert(
           this.module.update(bytes32(alice), alice, data, { from: owner }),
           'mrm17'
@@ -1321,8 +1357,8 @@ describe('ERC20MultiRewardModule', function () {
 
     describe('when start index exceeds end range', function () {
       it('should revert', async function () {
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address', 'address'],
-          [1, 1, this.token.address, this.elastic.address]);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
+          [true, 1, 1, this.token.address, this.elastic.address]);
         await expectRevert(
           this.module.update(bytes32(alice), alice, data, { from: owner }),
           'mrm18'
@@ -1332,8 +1368,8 @@ describe('ERC20MultiRewardModule', function () {
 
     describe('when end index exceeds max range', function () {
       it('should revert', async function () {
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address', 'address'],
-          [1, 3, this.token.address, this.elastic.address]);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
+          [true, 1, 3, this.token.address, this.elastic.address]);
         await expectRevert(
           this.module.update(bytes32(alice), alice, data, { from: owner }),
           'mrm19'
@@ -1343,8 +1379,8 @@ describe('ERC20MultiRewardModule', function () {
 
     describe('when duplicate tokens are provided', function () {
       it('should revert', async function () {
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address', 'address'],
-          [0, 2, this.elastic.address, this.elastic.address]);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
+          [true, 0, 2, this.elastic.address, this.elastic.address]);
         await expectRevert(
           this.module.update(bytes32(alice), alice, data, { from: owner }),
           'mrm20'
@@ -1364,8 +1400,10 @@ describe('ERC20MultiRewardModule', function () {
       beforeEach(async function () {
         // bob registers for all rewards
         await setupTime(this.t0, days(50));
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address', 'address'],
-          [0, 1, this.token.address, this.elastic.address]);
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
+          [true, 0, 1, ...tokens]);
         this.res = await this.module.update(bytes32(bob), bob, data, { from: owner });
         this.t1 = new BN((await web3.eth.getBlock('latest')).timestamp);
       });
@@ -1427,8 +1465,8 @@ describe('ERC20MultiRewardModule', function () {
       beforeEach(async function () {
         // alice registers for all rewards
         await setupTime(this.t0, days(50));
-        const data = web3.eth.abi.encodeParameters(['uint256', 'uint256', 'address'],
-          [0, 2, this.elastic.address]);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address'],
+          [true, 0, 2, this.elastic.address]);
         this.res = await this.module.update(bytes32(alice), alice, data, { from: owner });
         this.t1 = new BN((await web3.eth.getBlock('latest')).timestamp);
       });
@@ -1488,7 +1526,245 @@ describe('ERC20MultiRewardModule', function () {
 
     });
 
-    // TODO update -> claim
+    describe('when user deregisters for one reward token on some stakes', function () {
+
+      beforeEach(async function () {
+        // alice deregisters for one reward token
+        await setupTime(this.t0, days(50));
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address'],
+          [false, 1, 2, this.token.address]);
+        this.res = await this.module.update(bytes32(alice), alice, data, { from: owner });
+        this.t1 = new BN((await web3.eth.getBlock('latest')).timestamp);
+      });
+
+      it('should not affect stake count for user', async function () {
+        expect(await this.module.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should not affect user stake shares', async function () {
+        expect((await this.module.stakes(bytes32(alice), 0)).shares).to.be.bignumber.equal(shares(100));
+        expect((await this.module.stakes(bytes32(alice), 1)).shares).to.be.bignumber.equal(shares(150));
+      });
+
+      it('should not affect user stake timestamps', async function () {
+        expect((await this.module.stakes(bytes32(alice), 0)).timestamp).to.be.bignumber.closeTo(this.t0.add(days(5)), new BN(1));
+        expect((await this.module.stakes(bytes32(alice), 1)).timestamp).to.be.bignumber.closeTo(this.t0.add(days(20)), new BN(1));
+      });
+
+      it('should decrease reward count for specified stakes', async function () {
+        expect((await this.module.stakes(bytes32(alice), 1)).count).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should not affect reward count for other stakes', async function () {
+        expect((await this.module.stakes(bytes32(alice), 0)).count).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should update accumulator for each specified reward token', async function () {
+        expect((await this.module.rewards(this.token.address)).accumulator).to.be.bignumber.closeTo(e18(1.6), E18_DELTA);
+      });
+
+      it('should not update accumulator for unspecified reward token', async function () {
+        // effective value at 4.0 now
+        expect((await this.module.rewards(this.elastic.address)).accumulator).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should move renounced rewards to dust for specified reward token', async function () {
+        // 0.6 * 150 = 90
+        expect((await this.module.rewards(this.token.address)).dust).to.be.bignumber.closeTo(shares(90), SHARE_DELTA);
+      });
+
+      it('should decrease total staking shares for deregistered reward token', async function () {
+        expect((await this.module.rewards(this.token.address)).stakingShares).to.be.bignumber.equal(shares(100)); // -150
+      });
+
+      it('should not affect total staking shares for other registered reward token', async function () {
+        expect((await this.module.rewards(this.elastic.address)).stakingShares).to.be.bignumber.equal(shares(100));
+      });
+
+      it('should not affect accumulator start for other rewards', async function () {
+        expect(await this.module.stakeRegistered(bytes32(alice), 0, this.elastic.address)).to.be.bignumber.closeTo(new BN(1), E18_DELTA); // start
+        expect(await this.module.stakeRegistered(bytes32(alice), 1, this.elastic.address)).to.be.bignumber.closeTo(new BN(0), E18_DELTA); // unregistered
+      });
+
+      it('should clear user accumulator start for specified reward token and stake', async function () {
+        expect(await this.module.stakeRegistered(bytes32(alice), 1, this.token.address)).to.be.bignumber.closeTo(new BN(0), E18_DELTA);
+      });
+
+      it('should not affect accumulator start for specified reward token and other stake', async function () {
+        expect(await this.module.stakeRegistered(bytes32(alice), 0, this.token.address)).to.be.bignumber.closeTo(new BN(1), E18_DELTA);
+      });
+
+      it('should emit RewardsUpdated event', async function () {
+        expectEvent(this.res, 'RewardsUpdated', { account: bytes32(alice) });
+      });
+
+    });
+
+
+    describe('when user deregisters for reward token on all stakes', function () {
+
+      beforeEach(async function () {
+        // alice deregisters for one reward token
+        await setupTime(this.t0, days(50));
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address'],
+          [false, 0, 2, this.elastic.address]);
+        this.res = await this.module.update(bytes32(alice), alice, data, { from: owner });
+        this.t1 = new BN((await web3.eth.getBlock('latest')).timestamp);
+      });
+
+      it('should not affect stake count for user', async function () {
+        expect(await this.module.stakeCount(bytes32(alice))).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should not affect user stake shares', async function () {
+        expect((await this.module.stakes(bytes32(alice), 0)).shares).to.be.bignumber.equal(shares(100));
+        expect((await this.module.stakes(bytes32(alice), 1)).shares).to.be.bignumber.equal(shares(150));
+      });
+
+      it('should not affect user stake timestamps', async function () {
+        expect((await this.module.stakes(bytes32(alice), 0)).timestamp).to.be.bignumber.closeTo(this.t0.add(days(5)), new BN(1));
+        expect((await this.module.stakes(bytes32(alice), 1)).timestamp).to.be.bignumber.closeTo(this.t0.add(days(20)), new BN(1));
+      });
+
+      it('should decrease reward count for previously registered stake', async function () {
+        expect((await this.module.stakes(bytes32(alice), 0)).count).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should not affect reward count for already unregistered stake', async function () {
+        expect((await this.module.stakes(bytes32(alice), 1)).count).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should update accumulator for each specified reward token', async function () {
+        expect((await this.module.rewards(this.elastic.address)).accumulator).to.be.bignumber.closeTo(e18(4.0), E18_DELTA);
+      });
+
+      it('should not update accumulator for unspecified reward token', async function () {
+        // effective value at 1.6 now
+        expect((await this.module.rewards(this.token.address)).accumulator).to.be.bignumber.closeTo(e18(1.0), E18_DELTA);
+      });
+
+      it('should move renounced rewards to dust for specified reward token', async function () {
+        expect((await this.module.rewards(this.elastic.address)).dust).to.be.bignumber.closeTo(shares(400), SHARE_DELTA);
+      });
+
+      it('should decrease total staking shares for deregistered reward token', async function () {
+        expect((await this.module.rewards(this.elastic.address)).stakingShares).to.be.bignumber.equal(new BN(0));
+      });
+
+      it('should not affect total staking shares for other registered reward token', async function () {
+        expect((await this.module.rewards(this.token.address)).stakingShares).to.be.bignumber.equal(shares(250));
+      });
+
+      it('should not affect accumulator start for other rewards', async function () {
+        expect(await this.module.stakeRegistered(bytes32(alice), 0, this.token.address)).to.be.bignumber.closeTo(new BN(1), E18_DELTA); // start
+        expect(await this.module.stakeRegistered(bytes32(alice), 1, this.token.address)).to.be.bignumber.closeTo(e18(1.0), E18_DELTA); // unregistered
+      });
+
+      it('should clear user accumulator start for specified reward token', async function () {
+        expect(await this.module.stakeRegistered(bytes32(alice), 0, this.elastic.address)).to.be.bignumber.closeTo(new BN(0), E18_DELTA);
+        expect(await this.module.stakeRegistered(bytes32(alice), 1, this.elastic.address)).to.be.bignumber.closeTo(new BN(0), E18_DELTA);
+      });
+
+      it('should emit RewardsUpdated event', async function () {
+        expectEvent(this.res, 'RewardsUpdated', { account: bytes32(alice) });
+      });
+
+    });
+
+
+    describe('when user registers for all rewards then claims', function () {
+
+      beforeEach(async function () {
+        // bob registers for all rewards
+        await setupTime(this.t0, days(50));
+        const tokens = [this.token.address, this.elastic.address];
+        tokens.sort(compareAddresses);
+        const data = web3.eth.abi.encodeParameters(['bool', 'uint256', 'uint256', 'address', 'address'],
+          [true, 0, 1, ...tokens]);
+        await this.module.update(bytes32(bob), bob, data, { from: owner });
+        new BN((await web3.eth.getBlock('latest')).timestamp);
+
+        // token expands
+        await setupTime(this.t0, days(70));
+        await this.elastic.setCoefficient(e18(1.05)); // should only affect token amounts and balances
+
+        // claim
+        await setupTime(this.t0, days(80));
+        // (same data encoding)
+        this.res = await this.module.claim(bytes32(bob), bob, bob, 0, data, { from: owner });
+        this.t2 = new BN((await web3.eth.getBlock('latest')).timestamp);
+
+        // day 80
+        // token: 30 days @ 5 / 571 = 0.262697023
+        // elastic: 30 days @ 20 / 421 = 1.425178147
+        // vesting: 70/90 days
+      });
+
+      it('should not affect stake count for user', async function () {
+        expect(await this.module.stakeCount(bytes32(bob))).to.be.bignumber.equal(new BN(1));
+      });
+
+      it('should not affect user stake shares', async function () {
+        expect((await this.module.stakes(bytes32(bob), 0)).shares).to.be.bignumber.equal(shares(321));
+      });
+
+      it('should not affect user stake timestamps', async function () {
+        expect((await this.module.stakes(bytes32(bob), 0)).timestamp).to.be.bignumber.closeTo(this.t0.add(days(10)), new BN(1));
+      });
+
+      it('should increase user stake reward counts', async function () {
+        expect((await this.module.stakes(bytes32(bob), 0)).count).to.be.bignumber.equal(new BN(2));
+      });
+
+      it('should update accumulator for each reward token', async function () {
+        expect((await this.module.rewards(this.token.address)).accumulator).to.be.bignumber.closeTo(e18(1.6 + 0.262697023), E18_DELTA);
+        expect((await this.module.rewards(this.elastic.address)).accumulator).to.be.bignumber.closeTo(e18(4.0 + 1.425178147), E18_DELTA);
+      });
+
+      it('should keep increased total staking shares for each reward token', async function () {
+        expect((await this.module.rewards(this.token.address)).stakingShares).to.be.bignumber.equal(shares(571));
+        expect((await this.module.rewards(this.elastic.address)).stakingShares).to.be.bignumber.equal(shares(421));
+      });
+
+      it('should reset user stake rewards accumulator start for each reward token', async function () {
+        expect(await this.module.stakeRegistered(bytes32(bob), 0, this.token.address)).to.be.bignumber.closeTo(e18(1.6 + 0.262697023), E18_DELTA);
+        expect(await this.module.stakeRegistered(bytes32(bob), 0, this.elastic.address)).to.be.bignumber.closeTo(e18(4.0 + 1.425178147), E18_DELTA);
+      });
+
+      it('should increase user reward token balances', async function () {
+        // 7/9 * 0.262697023 * 321 = 65.586690076
+        // 7/9 * 1.425178147 * 321 = 355.819477368
+        expect(await this.token.balanceOf(bob)).to.be.bignumber.closeTo(tokens(65.58669), TOKEN_DELTA);
+        expect(await this.elastic.balanceOf(bob)).to.be.bignumber.closeTo(tokens(1.05 * 355.81948), TOKEN_DELTA); // inflation
+      });
+
+      it('should decrease module reward token balances', async function () {
+        expect(await this.token.balanceOf(this.module.address)).to.be.bignumber.closeTo(tokens(1000 - 65.58669), TOKEN_DELTA);
+        expect(await this.elastic.balanceOf(this.module.address)).to.be.bignumber.closeTo(tokens(1.05 * (2000 - 355.81948)), TOKEN_DELTA); // inflation
+      });
+
+      it('should carry over some unvested reward token dust', async function () {
+        expect((await this.module.rewards(this.token.address)).dust).to.be.bignumber.closeTo(shares(18.73905), SHARE_DELTA);
+        expect((await this.module.rewards(this.elastic.address)).dust).to.be.bignumber.closeTo(shares(101.66271), SHARE_DELTA);
+      });
+
+      it('should emit first RewardsDistributed event', async function () {
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.token.address)[0];
+        expect(e.args.user).eq(bob);
+        expect(e.args.token).eq(this.token.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(65.58669), TOKEN_DELTA);
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(65.58669), SHARE_DELTA);
+      });
+
+      it('should emit second RewardsDistributed event', async function () {
+        const e = this.res.logs.filter(l => l.event === 'RewardsDistributed' && l.args.token == this.elastic.address)[0];
+        expect(e.args.user).eq(bob);
+        expect(e.args.token).eq(this.elastic.address);
+        expect(e.args.amount).to.be.bignumber.closeTo(tokens(1.05 * 355.81948), tokens(0.002)); // inflation
+        expect(e.args.shares).to.be.bignumber.closeTo(shares(355.81948), shares(0.002));
+      });
+
+    });
 
   })
 

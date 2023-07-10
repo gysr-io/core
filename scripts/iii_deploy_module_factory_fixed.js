@@ -3,7 +3,7 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const { ethers } = require('hardhat');
+const { ethers, network } = require('hardhat');
 const { LedgerSigner } = require('@anders-t/ethers-ledger');
 
 const { DEPLOYER_INDEX, FACTORY_ADDRESS } = process.env;
@@ -15,14 +15,14 @@ async function main() {
 
   // deploy
   const ERC20FixedRewardModuleFactory = await ethers.getContractFactory('ERC20FixedRewardModuleFactory');
-  const modulefactory = await ERC20FixedRewardModuleFactory.connect(ledger).deploy();
+  const modulefactory = await ERC20FixedRewardModuleFactory.connect(ledger).deploy({ maxFeePerGas: network.config.gas, maxPriorityFeePerGas: network.config.priority });
   await modulefactory.deployed();
   console.log('ERC20FixedRewardModuleFactory deployed to:', modulefactory.address);
 
   // whitelist
   const PoolFactory = await ethers.getContractFactory('PoolFactory');
   const factory = await PoolFactory.attach(FACTORY_ADDRESS);
-  const res = await factory.connect(ledger).setWhitelist(modulefactory.address, 2);
+  const res = await factory.connect(ledger).setWhitelist(modulefactory.address, 2, { maxFeePerGas: network.config.gas, maxPriorityFeePerGas: network.config.priority, gasLimit: 50000 });
   //console.log(res);
 }
 

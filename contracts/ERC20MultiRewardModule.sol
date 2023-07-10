@@ -126,6 +126,10 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
 
     /**
      * @inheritdoc IRewardModule
+     *
+     * @dev stake and register for rewards on specified tokens
+     *
+     * `data`: address[] tokens
      */
     function stake(
         bytes32 account,
@@ -166,6 +170,10 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
 
     /**
      * @inheritdoc IRewardModule
+     *
+     * @dev unstake and claim/unregister rewards on specified tokens
+     *
+     * `data`: address[] tokens (must be ordered)
      */
     function unstake(
         bytes32 account,
@@ -187,13 +195,9 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
                 addr := calldataload(pos)
             }
             tkns[i] = addr;
-            // verify no duplicates
-            for (uint256 j; j < i; ) {
-                require(addr != tkns[j], "mrm7");
-                unchecked {
-                    ++j;
-                }
-            }
+            // verify ordered and no duplicates
+            if (i > 0) require(addr > tkns[i - 1], "mrm7");
+
             // update token
             _update(addr);
             unchecked {
@@ -277,7 +281,10 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
      * @inheritdoc IRewardModule
      *
      * @dev claim rewards on specified tokens, optionally specify stakes, and optionally deregister
-     * @param data (bool continue, uint256 start, uint256 end, address[] tokens)
+     *
+     * `data`: (bool continue, uint256 start, uint256 end, address[] tokens)
+     *
+     * note: encoded token array addresses must be sorted
      */
     function claim(
         bytes32 account,
@@ -314,13 +321,9 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
                 addr := calldataload(pos)
             }
             tkns[i] = addr;
-            // verify no duplicates
-            for (uint256 j; j < i; ) {
-                require(addr != tkns[j], "mrm14");
-                unchecked {
-                    ++j;
-                }
-            }
+            // verify ordered and no duplicates
+            if (i > 0) require(addr > tkns[i - 1], "mrm14");
+
             // update token
             _update(addr);
             unchecked {
@@ -372,8 +375,11 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
     /**
      * @inheritdoc IRewardModule
      *
-     * @dev register for specified rewards token on existing stake
-     * @param (uint256 start, uint256 end, address[] tokens)
+     * @dev register or deregister for specified rewards token on existing stake
+     *
+     * `data`: (bool register, uint256 start, uint256 end, address[] tokens)
+     *
+     * note: encoded token array addresses must be sorted
      */
     function update(
         bytes32 account,
@@ -385,51 +391,59 @@ contract ERC20MultiRewardModule is ERC20BaseRewardModule {
         if (data.length == 0) return; // empty data indicates skip
 
         // validate
-        require(data.length > 64, "mrm15");
+        require(data.length > 96, "mrm15");
         require(data.length % 32 == 0, "mrm16");
-        uint256 count = data.length / 32 - 2;
+        uint256 count = data.length / 32 - 3;
         require(count <= _tokens.length, "mrm17");
         // count > 0 implied by above
 
+        bool register; // register or deregister
         uint256 index; // start claim index
         uint256 end; // end of claim index range, exclusive
         assembly {
-            index := calldataload(132)
-            end := calldataload(164)
+            register := calldataload(132)
+            index := calldataload(164)
+            end := calldataload(196)
         }
         require(index < end, "mrm18");
         require(end <= stakes[account].length, "mrm19");
 
+        address prev;
         for (uint256 i; i < count; ) {
-            uint256 pos = 196 + 32 * i;
+            uint256 pos = 228 + 32 * i;
             address addr;
             assembly {
                 addr := calldataload(pos)
             }
-            // verify no duplicates
-            for (uint256 j; j < i; ) {
-                pos = 196 + 32 * j;
-                address prev;
-                assembly {
-                    prev := calldataload(pos)
-                }
-                require(addr != prev, "mrm20");
-                unchecked {
-                    ++j;
-                }
-            }
+            // verify ordered and no duplicates
+            if (i > 0) require(addr > prev, "mrm20");
+
             // update token
             _update(addr);
 
-            for (uint256 j = index; j < end; ++j) {
-                if (stakes[account][j].registered[addr] > 0) continue;
-                stakes[account][j].count++;
-                stakes[account][j].registered[addr] = rewards[addr].accumulator;
-                rewards[addr].stakingShares += stakes[account][j].shares;
+            // register or clear accumulator
+            if (register) {
+                for (uint256 j = index; j < end; ++j) {
+                    Stake storage s = stakes[account][j];
+                    if (s.registered[addr] > 0) continue;
+                    s.count++;
+                    s.registered[addr] = rewards[addr].accumulator;
+                    rewards[addr].stakingShares += s.shares;
+                }
+            } else {
+                for (uint256 j = index; j < end; ++j) {
+                    Stake storage s = stakes[account][j];
+                    if (s.registered[addr] == 0) continue;
+                    _reward(s.shares, addr, s.registered[addr], 0); // renounce all rewards to dust
+                    s.count--;
+                    s.registered[addr] = 0;
+                    rewards[addr].stakingShares -= s.shares;
+                }
             }
             unchecked {
                 ++i;
             }
+            prev = addr;
         }
 
         emit RewardsUpdated(account);

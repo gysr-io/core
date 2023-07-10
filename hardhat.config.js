@@ -26,22 +26,26 @@ module.exports = {
     goerli: {
       url: `https://goerli.infura.io/v3/${INFURA_KEY}`,
       chainId: 5,
-      gasPrice: 1000000000, // 1 gwei
+      gas: 1000000000,  // 1 gwei
+      priority: 100000000,  // 0.1 gwei
     },
     mainnet: {
       url: `https://mainnet.infura.io/v3/${INFURA_KEY}`,
       chainId: 1,
-      gasPrice: 20000000000,  // 20 gwei
+      gas: 20000000000,  // 20 gwei
+      priority: 1000000000,  // 1 gwei
     },
     polygon: {
       url: `https://polygon-mainnet.infura.io/v3/${INFURA_KEY}`,
       chainId: 137,
-      gasPrice: 50000000000,  // 50 gwei
+      gas: 200000000000,  // 200 gwei
+      priority: 50000000000,  // 50 gwei
     },
     optimism: {
       url: `https://optimism-mainnet.infura.io/v3/${INFURA_KEY}`,
       chainId: 10,
-      gasPrice: 1000000,  // 0.001 gwei
+      gas: 1000000,  // 0.001 gwei
+      priority: 1000,  // 0.000001 gwei
     }
   },
   gasReporter: {
@@ -58,7 +62,8 @@ module.exports = {
       'TestERC1155',
       'TestFeeToken',
       'TestElasticToken',
-      'TestStakeUnstake'
+      'TestStakeUnstake',
+      'TestTemplateToken',
     ]
   },
   etherscan: {

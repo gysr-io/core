@@ -13,6 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../interfaces/IStakingModuleInfo.sol";
 import "../interfaces/IStakingModule.sol";
 import "../ERC20StakingModule.sol";
+import "./TokenUtilsInfo.sol";
 
 /**
  * @title ERC20 staking module info library
@@ -21,6 +22,8 @@ import "../ERC20StakingModule.sol";
  * additional information about the ERC20StakingModule contract.
  */
 library ERC20StakingModuleInfo {
+    using TokenUtilsInfo for IERC20;
+
     // -- IStakingModuleInfo --------------------------------------------------
 
     /**
@@ -117,8 +120,8 @@ library ERC20StakingModuleInfo {
         require(totalShares > 0, "smi1");
 
         // convert token amount to shares
-        IERC20Metadata tkn = IERC20Metadata(m.tokens()[0]);
-        uint256 s = (totalShares * amount) / tkn.balanceOf(module);
+        IERC20 tkn = IERC20(m.tokens()[0]);
+        uint256 s = tkn.getShares(module, totalShares, amount);
 
         require(s > 0, "smi2");
         require(m.shares(addr) >= s, "smi3");
@@ -139,7 +142,7 @@ library ERC20StakingModuleInfo {
             return 1e24;
         }
 
-        IERC20Metadata tkn = IERC20Metadata(m.tokens()[0]);
-        return (totalShares * 1e18) / tkn.balanceOf(module);
+        IERC20 tkn = IERC20(m.tokens()[0]);
+        return tkn.getShares(module, totalShares, 1e18);
     }
 }

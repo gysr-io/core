@@ -3,7 +3,7 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const { ethers } = require('hardhat');
+const { ethers, network } = require('hardhat');
 const { LedgerSigner } = require('@anders-t/ethers-ledger');
 
 const { DEPLOYER_INDEX } = process.env;
@@ -14,7 +14,7 @@ async function main() {
   console.log('Deploying from address:', await ledger.getAddress())
 
   const ERC20LinearRewardModuleInfo = await ethers.getContractFactory('ERC20LinearRewardModuleInfo');
-  const moduleinfo = await ERC20LinearRewardModuleInfo.connect(ledger).deploy();
+  const moduleinfo = await ERC20LinearRewardModuleInfo.connect(ledger).deploy({ maxFeePerGas: network.config.gas, maxPriorityFeePerGas: network.config.priority });
   await moduleinfo.deployed();
   console.log('ERC20LinearRewardModuleInfo deployed to:', moduleinfo.address);
 }

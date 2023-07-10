@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @dev basic ERC20 token for testing
  */
 contract TestToken is ERC20 {
-    uint256 _totalSupply = 50 * 10**6 * 10**18;
+    uint256 _totalSupply = 50 * 10 ** 6 * 10 ** 18;
 
     constructor() ERC20("TestToken", "TKN") {
         _mint(msg.sender, _totalSupply);
@@ -22,7 +22,7 @@ contract TestToken is ERC20 {
  * @dev another basic ERC20 token for testing
  */
 contract TestLiquidityToken is ERC20 {
-    uint256 _totalSupply = 1 * 10**6 * 10**18;
+    uint256 _totalSupply = 1 * 10 ** 6 * 10 ** 18;
 
     constructor() ERC20("TestLiquidityToken", "LP-TKN") {
         _mint(msg.sender, _totalSupply);
@@ -42,5 +42,27 @@ contract TestIndivisibleToken is ERC20 {
 
     function decimals() public pure override returns (uint8) {
         return 0;
+    }
+}
+
+/**
+ * @title Test indivisible token
+ * @dev test ERC20 token with parameterized
+ */
+contract TestTemplateToken is ERC20 {
+    uint8 immutable _decimals;
+
+    constructor(
+        string memory name,
+        string memory symbol,
+        uint256 supply,
+        uint8 decimals
+    ) ERC20(name, symbol) {
+        _mint(msg.sender, supply);
+        _decimals = decimals;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _decimals;
     }
 }

@@ -81,7 +81,9 @@ interface IConfiguration {
      * @return address parameter value
      * @return uint96 parameter value
      */
-    function getAddressUint96(bytes32 key) external returns (address, uint96);
+    function getAddressUint96(
+        bytes32 key
+    ) external view returns (address, uint96);
 
     /**
      * @notice override uint256 parameter for specific caller

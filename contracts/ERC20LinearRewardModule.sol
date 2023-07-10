@@ -284,6 +284,7 @@ contract ERC20LinearRewardModule is
         require(amount > 0, "lrm5");
         require(amount <= _token.balanceOf(address(this)), "lrm6");
         uint256 shares = _token.getShares(rewardShares, amount);
+        require(shares > 0);
         require(
             (stakingShares * rate * period) / 1e18 + shares <
                 rewardShares - earned,

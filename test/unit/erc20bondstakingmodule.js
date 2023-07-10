@@ -118,7 +118,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.open(
             this.token.address,
             e18(0.80),
-            e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)), // (1.05 - 0.80) / 1000e6
+            e18(0.25 / 1000), // (1.05 - 0.80) / 1000e6
             shares(100),
             shares(1000),
             { from: other }),
@@ -141,7 +141,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.open(
             this.token.address,
             e18(0.80),
-            e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)), // (1.05 - 0.80) / 1000e6
+            e18(0.25 / 1000), // (1.05 - 0.80) / 1000e6
             shares(100),
             shares(1000),
             { from: owner }),
@@ -156,7 +156,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.open(
             this.token.address,
             new BN(0),
-            e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)), // (1.05 - 0.80) / 1000e6
+            e18(0.25 / 1000), // (1.05 - 0.80) / 1000e6
             shares(100),
             shares(1000),
             { from: owner }),
@@ -171,7 +171,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.open(
             this.token.address,
             e18(0.80),
-            e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)),
+            e18(0.25 / 1000),
             shares(0),
             shares(1000),
             { from: owner }),
@@ -186,7 +186,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.open(
             this.token.address,
             e18(0.80),
-            e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)),
+            e18(0.25 / 1000),
             shares(100),
             shares(0),
             { from: owner }),
@@ -202,7 +202,7 @@ describe('ERC20BondStakingModule', function () {
         this.res = await this.module.open(
           this.token.address,
           e18(0.80),
-          e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)), // (1.05 - 0.80) / 1000e6
+          e18(0.25 / 1000), // (1.05 - 0.80) / 1000e6
           shares(100),
           shares(1000),
           { from: owner }
@@ -221,7 +221,7 @@ describe('ERC20BondStakingModule', function () {
       });
 
       it('should set bond market coefficient', async function () {
-        expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.equal(e18(0.25).div(toFixedPointBigNumber(1000, 10, 6)));
+        expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.equal(e18(0.25 / 1000));
       });
 
       it('should set max bond size', async function () {
@@ -239,7 +239,7 @@ describe('ERC20BondStakingModule', function () {
           {
             token: this.token.address,
             price: e18(0.80),
-            coeff: new BN('250000000'),
+            coeff: new BN('250000000000000'),
             max: shares(100),
             capacity: shares(1000)
           }
@@ -267,7 +267,7 @@ describe('ERC20BondStakingModule', function () {
       await this.module.open(
         this.token.address,
         e18(1.25),
-        e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)), // (2.0 - 1.25) / 1000e6
+        e18(0.75 / 1000), // (2.0 - 1.25) / 1000e6 as e24
         shares(100),
         shares(1000),
         { from: owner }
@@ -683,7 +683,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token1.address,
           e18(4000),
-          e18(1500).div(toFixedPointBigNumber(2000, 10, 6)), // (4000 - 1500) / 2000e6
+          e18(1500 / 2000), // (4000 - 1500) / 2000e6
           shares(100),
           shares(3000),
           { from: owner }
@@ -860,7 +860,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(5.0),
-          e18(2.5).div(toFixedPointBigNumber(5000, 10, 6)), // (7.5 - 5.0) / 5000e6
+          e18(2.5 / 5000), // (7.5 - 5.0) / 5000e6
           shares(500),
           shares(10000),
           { from: owner }
@@ -1013,7 +1013,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(5.0),
-          e18(2.5).div(toFixedPointBigNumber(5000, 10, 6)), // (7.5 - 5.0) / 5000e6
+          e18(2.5 / 5000), // (7.5 - 5.0) / 5000e6
           shares(500),
           shares(10000),
           { from: owner }
@@ -1160,7 +1160,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(3.0),
-          e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+          e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6 as e24
           shares(1000),
           shares(10000),
           { from: owner }
@@ -1374,7 +1374,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(3.0),
-          e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+          e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
           shares(1000),
           shares(10000),
           { from: owner }
@@ -1756,7 +1756,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(3.0),
-          e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+          e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
           shares(1000),
           shares(10000),
           { from: owner }
@@ -1764,7 +1764,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.elastic.address,
           e18(50.0),
-          e18(25).div(toFixedPointBigNumber(500, 10, 6)), // (75 - 50) / 500e6
+          e18(25 / 500), // (75 - 50) / 500e6
           shares(200),
           shares(10000),
           { from: owner }
@@ -2049,7 +2049,7 @@ describe('ERC20BondStakingModule', function () {
       await this.module.open(
         this.token.address,
         e18(3.0),
-        e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+        e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
         shares(1000),
         shares(10000),
         { from: owner }
@@ -2191,7 +2191,7 @@ describe('ERC20BondStakingModule', function () {
       await this.module.open(
         this.token.address,
         e18(3.0),
-        e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+        e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
         shares(1000),
         shares(10000),
         { from: owner }
@@ -2452,7 +2452,7 @@ describe('ERC20BondStakingModule', function () {
       await this.module.open(
         this.token.address,
         e18(3.0),
-        e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+        e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
         shares(1000),
         shares(10000),
         { from: owner }
@@ -2513,7 +2513,7 @@ describe('ERC20BondStakingModule', function () {
       await this.module.open(
         this.token.address,
         e18(3.00),
-        e18(1.50).div(toFixedPointBigNumber(1000, 10, 6)), // (4.50 - 3.00) / 1000e6
+        e18(1.50 / 1000), // (4.50 - 3.00) / 1000e6
         shares(100),
         shares(1000),
         { from: owner }
@@ -2531,7 +2531,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.adjust(
             this.token.address,
             e18(5.25),
-            e18(0.75).div(toFixedPointBigNumber(2000, 10, 6)), // (6.00 - 5.25) / 1000e6
+            e18(0.75 / 1000), // (6.00 - 5.25) / 1000e6
             shares(100),
             shares(2000),
             { from: other }),
@@ -2546,7 +2546,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.adjust(
             other,
             e18(5.25),
-            e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)),
+            e18(0.75 / 1000),
             shares(100),
             shares(2000),
             { from: owner }),
@@ -2561,7 +2561,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.adjust(
             this.token.address,
             e18(0),
-            e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)),
+            e18(0.75 / 1000),
             shares(100),
             shares(2000),
             { from: owner }),
@@ -2576,7 +2576,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.adjust(
             this.token.address,
             e18(5.25),
-            e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)),
+            e18(0.75 / 1000),
             shares(0),
             shares(2000),
             { from: owner }),
@@ -2591,7 +2591,7 @@ describe('ERC20BondStakingModule', function () {
           this.module.adjust(
             this.token.address,
             e18(5.25),
-            e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)),
+            e18(0.75 / 1000),
             shares(100),
             shares(0),
             { from: owner }),
@@ -2610,7 +2610,7 @@ describe('ERC20BondStakingModule', function () {
         this.res = await this.module.adjust(
           this.token.address,
           e18(5.25),
-          e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)), // (6.0 - 5.25) / 1000e6
+          e18(0.75 / 1000), // (6.0 - 5.25) / 1000e6
           shares(80),
           shares(2000),
           { from: owner }
@@ -2623,7 +2623,7 @@ describe('ERC20BondStakingModule', function () {
         it('should create new adjustment entry', async function () {
           let adj = await this.module.adjustments(this.token.address);
           expect(adj.price).to.be.bignumber.equal(e18(5.25));
-          expect(adj.coeff).to.be.bignumber.equal(new BN('750000000'));
+          expect(adj.coeff).to.be.bignumber.equal(new BN('750000000000000'));
           expect(adj.timestamp).to.be.bignumber.equal(this.t0);
         });
 
@@ -2640,7 +2640,7 @@ describe('ERC20BondStakingModule', function () {
         });
 
         it('should not change bond market coefficient yet', async function () {
-          expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.equal(e18(1.50).div(toFixedPointBigNumber(1000, 10, 6)));
+          expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.equal(e18(1.5 / 1000));
         });
 
         it('should emit MarketAdjusted event', async function () {
@@ -2650,7 +2650,7 @@ describe('ERC20BondStakingModule', function () {
             {
               token: this.token.address,
               price: e18(5.25),
-              coeff: new BN('750000000'),
+              coeff: new BN('750000000000000'),
               max: shares(80),
               capacity: shares(2000)
             }
@@ -2670,7 +2670,7 @@ describe('ERC20BondStakingModule', function () {
         it('should create new adjustment entry', async function () {
           let adj = await this.module.adjustments(this.token.address);
           expect(adj.price).to.be.bignumber.equal(e18(5.25));
-          expect(adj.coeff).to.be.bignumber.equal(new BN('750000000'));
+          expect(adj.coeff).to.be.bignumber.equal(new BN('750000000000000'));
           expect(adj.timestamp).to.be.bignumber.equal(this.t0);
         });
 
@@ -2691,8 +2691,8 @@ describe('ERC20BondStakingModule', function () {
 
         it('should interpolate 1/3 of the change to bond market coefficient', async function () {
           expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.closeTo(
-            e18(1.25).div(toFixedPointBigNumber(1000, 10, 6)),
-            e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)).div(days(30))
+            e18(1.25 / 1000),
+            e18(0.75 / 1000).div(days(30))
           );
         });
 
@@ -2726,7 +2726,7 @@ describe('ERC20BondStakingModule', function () {
         });
 
         it('should reach target bond market coefficient', async function () {
-          expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.equal(e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)));
+          expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.equal(e18(0.75 / 1000));
         });
 
       });
@@ -2745,7 +2745,7 @@ describe('ERC20BondStakingModule', function () {
         it('should create new adjustment entry', async function () {
           let adj = await this.module.adjustments(this.token.address);
           expect(adj.price).to.be.bignumber.equal(e18(5.25));
-          expect(adj.coeff).to.be.bignumber.equal(new BN('750000000'));
+          expect(adj.coeff).to.be.bignumber.equal(new BN('750000000000000'));
           expect(adj.timestamp).to.be.bignumber.equal(this.t0);
         });
 
@@ -2766,8 +2766,8 @@ describe('ERC20BondStakingModule', function () {
 
         it('should interpolate 1/2 of the change to bond market coefficient', async function () {
           expect((await this.module.markets(this.token.address)).coeff).to.be.bignumber.closeTo(
-            e18(1.125).div(toFixedPointBigNumber(1000, 10, 6)),
-            e18(0.75).div(toFixedPointBigNumber(1000, 10, 6)).div(days(30))
+            e18(1.125 / 1000),
+            e18(0.75 / 1000).div(days(30))
           );
         });
 
@@ -2796,7 +2796,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(3.0),
-          e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+          e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
           shares(1000),
           shares(10000),
           { from: owner }
@@ -2950,7 +2950,7 @@ describe('ERC20BondStakingModule', function () {
         await this.module.open(
           this.token.address,
           e18(3.0),
-          e18(1.5).div(toFixedPointBigNumber(1000, 10, 6)), // (4.5 - 3.0) / 1000e6
+          e18(1.5 / 1000), // (4.5 - 3.0) / 1000e6
           shares(1000),
           shares(10000),
           { from: owner }

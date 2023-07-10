@@ -312,6 +312,7 @@ contract ERC20FixedRewardModule is
         require(amount > 0, "xrm6");
         require(amount <= _token.balanceOf(address(this)), "xrm7");
         uint256 shares = _token.getShares(rewards, amount);
+        require(shares > 0);
         require(shares <= rewards - debt, "xrm8");
 
         // withdraw

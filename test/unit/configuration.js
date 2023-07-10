@@ -203,6 +203,15 @@ describe('Configuration', function () {
       });
     });
 
+    describe('when non controller tries to set address uint96 override', function () {
+      it('should fail', async function () {
+        await expectRevert(
+          this.config.overrideAddressUint96(alice, web3.utils.soliditySha3('config.test.pair'), bob, new BN(123), { from: alice }),
+          'oc2' // OwnerController: caller is not the controller
+        );
+      });
+    });
+
     describe('when uint256 parameter is overriden', function () {
       beforeEach(async function () {
         this.res = await this.config.overrideUint256(

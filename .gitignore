@@ -116,6 +116,7 @@ truffle-config.js
 abis/
 artifacts/
 cache/
+stage/
 
 coverage/
 coverage.json

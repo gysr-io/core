@@ -3,7 +3,7 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const { ethers } = require('hardhat');
+const { ethers, network } = require('hardhat');
 const { LedgerSigner } = require('@anders-t/ethers-ledger');
 
 const { DEPLOYER_INDEX } = process.env;
@@ -14,7 +14,7 @@ async function main() {
   console.log('Deploying from address:', await ledger.getAddress())
 
   const PoolInfo = await ethers.getContractFactory('PoolInfo');
-  const info = await PoolInfo.connect(ledger).deploy();
+  const info = await PoolInfo.connect(ledger).deploy({ maxFeePerGas: network.config.gas, maxPriorityFeePerGas: network.config.priority });
   await info.deployed();
   console.log('PoolInfo deployed to:', info.address);
 }

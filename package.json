@@ -1,12 +1,14 @@
 {
   "name": "@gysr/core",
-  "version": "3.0.0-beta.0",
+  "version": "3.0.0",
   "description": "GYSR core protocol contracts, interfaces, libraries, and ABIs",
   "files": [
     "contracts/*.sol",
     "contracts/info/*.sol",
     "contracts/interfaces/*.sol",
     "abis/*.json",
+    "abis/info/*.json",
+    "abis/interfaces/*.json",
     "!contracts/test"
   ],
   "dependencies": {
@@ -38,7 +40,8 @@
   "scripts": {
     "test": "hardhat compile && hardhat test",
     "coverage": "hardhat clean && hardhat coverage",
-    "package": "hardhat compile && node scripts/abis.js && npm publish --access public"
+    "stage": "hardhat compile && node scripts/abis.js && npm publish ./stage --dry-run",
+    "package": "hardhat compile && node scripts/abis.js && npm publish ./stage --access public"
   },
   "repository": {
     "type": "git",

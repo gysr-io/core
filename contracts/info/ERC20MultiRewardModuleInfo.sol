@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import "../interfaces/IRewardModule.sol";
 import "../ERC20MultiRewardModule.sol";
+import "./TokenUtilsInfo.sol";
 
 /**
  * @title ERC20 multi reward module info library
@@ -20,6 +21,8 @@ import "../ERC20MultiRewardModule.sol";
  * additional information about the ERC20MultiRewardModule contract.
  */
 library ERC20MultiRewardModuleInfo {
+    using TokenUtilsInfo for IERC20;
+
     // -- IRewardModuleInfo ---------------------------------------------------
 
     /**
@@ -146,9 +149,11 @@ library ERC20MultiRewardModuleInfo {
         // adjust shares to amount
         for (uint256 j; j < rewards_.length; ++j) {
             if (m.totalShares(tokens_[j]) == 0) continue;
-            rewards_[j] =
-                (rewards_[j] * IERC20Metadata(tokens_[j]).balanceOf(module)) /
-                m.totalShares(tokens_[j]);
+            rewards_[j] = IERC20(tokens_[j]).getAmount(
+                module,
+                m.totalShares(tokens_[j]),
+                rewards_[j]
+            );
         }
     }
 
@@ -215,9 +220,11 @@ library ERC20MultiRewardModuleInfo {
         // adjust shares to amount
         for (uint256 j; j < rewards_.length; ++j) {
             if (m.totalShares(tokens_[j]) == 0) continue;
-            rewards_[j] =
-                (rewards_[j] * IERC20Metadata(tokens_[j]).balanceOf(module)) /
-                m.totalShares(tokens_[j]);
+            rewards_[j] = IERC20(tokens_[j]).getAmount(
+                module,
+                m.totalShares(tokens_[j]),
+                rewards_[j]
+            );
         }
     }
 
@@ -289,7 +296,7 @@ library ERC20MultiRewardModuleInfo {
         address token
     ) public view returns (uint256) {
         ERC20MultiRewardModule m = ERC20MultiRewardModule(module);
-        IERC20Metadata tkn = IERC20Metadata(token);
+        IERC20 tkn = IERC20(token);
         uint256 totalShares = m.totalShares(address(tkn));
         if (totalShares == 0) {
             return 0;
@@ -299,7 +306,7 @@ library ERC20MultiRewardModuleInfo {
             m.lockedShares(token) +
             unlockable(module, token);
 
-        return (shares * tkn.balanceOf(module)) / totalShares;
+        return tkn.getAmount(module, totalShares, shares);
     }
 
     /**
